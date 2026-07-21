@@ -17,6 +17,15 @@ class OAuthConfig
      * @param  array<int, string>  $extraTokenFields  Additional keys to persist
      *                                                from the token response
      *                                                (e.g. an organizer key).
+     * @param  array<string, string>  $extraAuthorizeParams  Extra query params for
+     *                                                       the authorization URL
+     *                                                       (e.g. Zoho's
+     *                                                       access_type=offline).
+     * @param  string  $scopeSeparator  Delimiter for the scope string; OAuth2
+     *                                  specifies a space, but some providers
+     *                                  (Zoho) require commas.
+     * @param  bool  $credentialsInBody  Send the client id/secret as form fields
+     *                                   rather than HTTP Basic auth.
      */
     public function __construct(
         public readonly string $authorizeUrl,
@@ -26,13 +35,16 @@ class OAuthConfig
         public readonly array $scopes,
         public readonly bool $usesPkce = true,
         public readonly array $extraTokenFields = [],
+        public readonly array $extraAuthorizeParams = [],
+        public readonly string $scopeSeparator = ' ',
+        public readonly bool $credentialsInBody = false,
     ) {}
 
     /**
-     * The space-delimited scope string used in the authorization request.
+     * The delimited scope string used in the authorization request.
      */
     public function scopeString(): string
     {
-        return implode(' ', $this->scopes);
+        return implode($this->scopeSeparator, $this->scopes);
     }
 }

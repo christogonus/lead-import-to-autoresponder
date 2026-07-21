@@ -26,8 +26,9 @@ class GoToWebinarProvider implements AutoresponderProvider
     private const BASE_URL = 'https://api.getgo.com/G2W/rest/v2';
 
     /**
-     * GoToWebinar rejects registrants without a first and last name, so blank
-     * names fall back to this placeholder.
+     * GoToWebinar rejects registrants without a first and last name. Names are
+     * derived from the email where possible; this is the last resort for an
+     * address with nothing name-like in it (e.g. "12345@example.com").
      */
     private const NAME_FALLBACK = 'Subscriber';
 
@@ -79,11 +80,15 @@ class GoToWebinarProvider implements AutoresponderProvider
             return ContactSyncResult::failure('Missing organizer key for the connection.');
         }
 
+        // GoTo requires a real first and last name, so nameless contacts have
+        // theirs guessed from the email rather than registering as "there".
+        $names = $contact->resolvedNames();
+
         $response = $this->client()->post(
             "/organizers/{$organizerKey}/webinars/{$remoteListId}/registrants",
             [
-                'firstName' => $this->nameOrFallback($contact->firstName),
-                'lastName' => $this->nameOrFallback($contact->lastName),
+                'firstName' => $this->nameOrFallback($names['first']),
+                'lastName' => $this->nameOrFallback($names['last']),
                 'email' => $contact->email,
             ],
         );

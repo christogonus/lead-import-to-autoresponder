@@ -23,7 +23,7 @@ test('verify returns false for rejected credentials', function () {
     expect(birdSend(['api_key' => 'bad'])->verify())->toBeFalse();
 });
 
-test('lists maps tags across pages using the tag name as the identifier', function () {
+test('lists maps tags across pages using the tag id as the identifier', function () {
     Http::fake(['api.birdsend.co/v1/tags*' => Http::sequence()
         ->push(['data' => [['tag_id' => 1, 'name' => 'Leads'], ['tag_id' => 2, 'name' => 'Customers']], 'meta' => ['current_page' => 1, 'last_page' => 2]], 200)
         ->push(['data' => [['tag_id' => 3, 'name' => 'VIP']], 'meta' => ['current_page' => 2, 'last_page' => 2]], 200)]);
@@ -31,9 +31,91 @@ test('lists maps tags across pages using the tag name as the identifier', functi
     $lists = birdSend()->lists();
 
     expect($lists)->toHaveCount(3)
-        ->and($lists[0]->id)->toBe('Leads')
+        ->and($lists[0]->id)->toBe('1')
         ->and($lists[0]->name)->toBe('Leads')
-        ->and($lists[2]->id)->toBe('VIP');
+        ->and($lists[2]->id)->toBe('3')
+        ->and($lists[2]->name)->toBe('VIP');
+});
+
+test('lists falls back to the name when a tag carries no id', function () {
+    Http::fake(['api.birdsend.co/v1/tags*' => Http::response([
+        'data' => [['name' => 'Leads']],
+        'meta' => ['last_page' => 1],
+    ], 200)]);
+
+    $lists = birdSend()->lists();
+
+    expect($lists[0]->id)->toBe('Leads');
+});
+
+test('pushContact resolves a stored tag id to the tag name at push time', function () {
+    Http::fake([
+        'api.birdsend.co/v1/tags*' => Http::response([
+            'data' => [['tag_id' => 7, 'name' => 'Renamed Leads']],
+            'meta' => ['last_page' => 1],
+        ], 200),
+        'api.birdsend.co/v1/contacts' => Http::response(['contact_id' => 12], 201),
+    ]);
+
+    $result = birdSend()->pushContact('7', new ContactPayload(email: 'jane@example.com'));
+
+    expect($result->successful)->toBeTrue();
+
+    // The tag was renamed in BirdSend; the mapping still resolves to the new name.
+    Http::assertSent(fn ($request) => $request->url() === 'https://api.birdsend.co/v1/contacts'
+        && $request['tags'] === ['Renamed Leads']);
+});
+
+test('pushContact fails cleanly when a stored tag id no longer exists', function () {
+    Http::fake([
+        'api.birdsend.co/v1/tags*' => Http::response(['data' => [], 'meta' => ['last_page' => 1]], 200),
+        'api.birdsend.co/v1/contacts' => Http::response(['contact_id' => 12], 201),
+    ]);
+
+    $result = birdSend()->pushContact('7', new ContactPayload(email: 'jane@example.com'));
+
+    expect($result->successful)->toBeFalse()
+        ->and($result->error)->toBe('That tag no longer exists in BirdSend.');
+
+    // No stray tag is created from the unresolved id.
+    Http::assertNotSent(fn ($request) => $request->url() === 'https://api.birdsend.co/v1/contacts');
+});
+
+test('pushContact surfaces a tag lookup failure as a contact failure', function () {
+    Http::fake(['api.birdsend.co/v1/tags*' => Http::response(['message' => 'Unauthenticated.'], 401)]);
+
+    $result = birdSend()->pushContact('7', new ContactPayload(email: 'jane@example.com'));
+
+    expect($result->successful)->toBeFalse()
+        ->and($result->error)->toContain('Unauthenticated.');
+});
+
+test('pushContact still honours a legacy mapping that stored the tag name', function () {
+    Http::fake(['api.birdsend.co/v1/contacts' => Http::response(['contact_id' => 12], 201)]);
+
+    $result = birdSend()->pushContact('Leads', new ContactPayload(email: 'jane@example.com'));
+
+    expect($result->successful)->toBeTrue();
+
+    // No tag lookup is needed, so none is made.
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/tags?'));
+    Http::assertSent(fn ($request) => $request['tags'] === ['Leads']);
+});
+
+test('the tag name lookup is cached across pushes', function () {
+    Http::fake([
+        'api.birdsend.co/v1/tags*' => Http::response([
+            'data' => [['tag_id' => 7, 'name' => 'Leads']],
+            'meta' => ['last_page' => 1],
+        ], 200),
+        'api.birdsend.co/v1/contacts' => Http::response(['contact_id' => 12], 201),
+    ]);
+
+    $provider = birdSend();
+    $provider->pushContact('7', new ContactPayload(email: 'one@example.com'));
+    $provider->pushContact('7', new ContactPayload(email: 'two@example.com'));
+
+    expect(Http::recorded(fn ($request) => str_contains($request->url(), '/tags?')))->toHaveCount(1);
 });
 
 test('pushContact creates the contact with the tag attached in one request', function () {

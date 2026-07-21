@@ -9,6 +9,7 @@ use App\Integrations\Drivers\GetResponseProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\MailchimpProvider;
 use App\Integrations\Drivers\SystemeIoProvider;
+use App\Integrations\Drivers\ZohoCampaignsProvider;
 use App\Integrations\OAuth\OAuthConfig;
 
 enum IntegrationProvider: string
@@ -19,6 +20,7 @@ enum IntegrationProvider: string
     case BirdSend = 'birdsend';
     case AWeber = 'aweber';
     case GoToWebinar = 'gotowebinar';
+    case ZohoCampaigns = 'zoho_campaigns';
 
     /**
      * Get the human-readable label for the provider.
@@ -32,6 +34,7 @@ enum IntegrationProvider: string
             self::BirdSend => 'BirdSend',
             self::AWeber => 'AWeber',
             self::GoToWebinar => 'GoToWebinar',
+            self::ZohoCampaigns => 'Zoho Campaigns',
         };
     }
 
@@ -47,6 +50,7 @@ enum IntegrationProvider: string
             self::BirdSend => 'tag',
             self::AWeber => 'list',
             self::GoToWebinar => 'webinar',
+            self::ZohoCampaigns => 'mailing list',
         };
     }
 
@@ -64,6 +68,7 @@ enum IntegrationProvider: string
             self::BirdSend => BirdSendProvider::class,
             self::AWeber => AWeberProvider::class,
             self::GoToWebinar => GoToWebinarProvider::class,
+            self::ZohoCampaigns => ZohoCampaignsProvider::class,
         };
     }
 
@@ -102,8 +107,34 @@ enum IntegrationProvider: string
                 usesPkce: false,
                 extraTokenFields: ['organizer_key', 'account_key'],
             ),
+            self::ZohoCampaigns => new OAuthConfig(
+                authorizeUrl: 'https://accounts.zoho.'.self::zohoRegion().'/oauth/v2/auth',
+                tokenUrl: 'https://accounts.zoho.'.self::zohoRegion().'/oauth/v2/token',
+                clientId: (string) config('services.zoho_campaigns.client_id'),
+                clientSecret: (string) config('services.zoho_campaigns.client_secret'),
+                scopes: ['ZohoCampaigns.contact.READ', 'ZohoCampaigns.contact.UPDATE'],
+                // Zoho's own docs use a confidential client with the credentials
+                // in the token request body, and only return a refresh token when
+                // offline access is requested — without it the connection dies an
+                // hour after it is made. api_domain pins the account's data centre.
+                usesPkce: false,
+                extraTokenFields: ['api_domain'],
+                extraAuthorizeParams: ['access_type' => 'offline', 'prompt' => 'consent'],
+                scopeSeparator: ',',
+                credentialsInBody: true,
+            ),
             default => null,
         };
+    }
+
+    /**
+     * Zoho's data centres are wholly separate — accounts host, API host and the
+     * OAuth app registration itself are all per-region, and tokens do not work
+     * across them. One region is configured per deployment.
+     */
+    private static function zohoRegion(): string
+    {
+        return (string) config('services.zoho_campaigns.region', 'com');
     }
 
     /**
@@ -150,6 +181,7 @@ enum IntegrationProvider: string
             // credential fields.
             self::AWeber => [],
             self::GoToWebinar => [],
+            self::ZohoCampaigns => [],
         };
     }
 }

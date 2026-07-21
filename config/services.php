@@ -45,4 +45,12 @@ return [
         'client_secret' => env('GOTOWEBINAR_CLIENT_SECRET'),
     ],
 
+    'zoho_campaigns' => [
+        'client_id' => env('ZOHO_CAMPAIGNS_CLIENT_ID'),
+        'client_secret' => env('ZOHO_CAMPAIGNS_CLIENT_SECRET'),
+        // The Zoho data centre the account lives in: com, eu, in, com.au or jp.
+        // The OAuth app must be registered in that region's API console.
+        'region' => env('ZOHO_CAMPAIGNS_REGION', 'com'),
+    ],
+
 ];

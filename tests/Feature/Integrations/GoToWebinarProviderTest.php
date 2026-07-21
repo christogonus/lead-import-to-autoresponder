@@ -79,21 +79,59 @@ test('pushContact registers the contact and returns the registrant key', functio
         && $request['email'] === 'jane@example.com');
 });
 
-test('pushContact falls back to a placeholder for a blank last name', function () {
+test('pushContact derives a name from the email for a contact with only the placeholder name', function () {
     Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars/555/registrants' => Http::response([
         'registrantKey' => 12345,
     ], 201)]);
 
     $result = goToWebinar()->pushContact('555', new ContactPayload(
-        email: 'jane@example.com',
+        email: 'grace.hopper@example.com',
         firstName: 'there',
         lastName: null,
     ));
 
     expect($result->successful)->toBeTrue();
 
-    // First name is preserved; the blank last name becomes the placeholder.
-    Http::assertSent(fn ($request) => $request['firstName'] === 'there'
+    // The "there" greeting placeholder is not a real name, so it is replaced
+    // rather than registered verbatim.
+    Http::assertSent(fn ($request) => $request['firstName'] === 'Grace'
+        && $request['lastName'] === 'Hopper');
+});
+
+test('pushContact falls back to the placeholder for a last name it cannot derive', function () {
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars/555/registrants' => Http::response([
+        'registrantKey' => 12345,
+    ], 201)]);
+
+    goToWebinar()->pushContact('555', new ContactPayload(email: 'jane@example.com', firstName: 'there'));
+
+    Http::assertSent(fn ($request) => $request['firstName'] === 'Jane'
+        && $request['lastName'] === 'Subscriber');
+});
+
+test('pushContact falls back entirely for an email with nothing name-like in it', function () {
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars/555/registrants' => Http::response([
+        'registrantKey' => 12345,
+    ], 201)]);
+
+    goToWebinar()->pushContact('555', new ContactPayload(email: '12345@example.com', firstName: 'there'));
+
+    Http::assertSent(fn ($request) => $request['firstName'] === 'Subscriber'
+        && $request['lastName'] === 'Subscriber');
+});
+
+test('pushContact keeps a real name rather than deriving one', function () {
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars/555/registrants' => Http::response([
+        'registrantKey' => 12345,
+    ], 201)]);
+
+    goToWebinar()->pushContact('555', new ContactPayload(
+        email: 'grace.hopper@example.com',
+        firstName: 'Jane',
+        lastName: null,
+    ));
+
+    Http::assertSent(fn ($request) => $request['firstName'] === 'Jane'
         && $request['lastName'] === 'Subscriber');
 });
 

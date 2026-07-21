@@ -39,6 +39,10 @@ class OAuthClient
             $query['code_challenge_method'] = 'S256';
         }
 
+        // e.g. Zoho only issues a refresh token when access_type=offline is asked
+        // for here, and re-issues it only when prompt=consent is also present.
+        $query = array_merge($query, $this->config->extraAuthorizeParams);
+
         return $this->config->authorizeUrl.'?'.http_build_query($query);
     }
 
@@ -81,15 +85,27 @@ class OAuthClient
      */
     private function tokenRequest(array $body): array
     {
-        $response = Http::asForm()
-            ->withBasicAuth($this->config->clientId, $this->config->clientSecret)
-            ->acceptJson()
-            ->post($this->config->tokenUrl, $body);
+        $request = Http::asForm()->acceptJson();
+
+        if ($this->config->credentialsInBody) {
+            $body['client_id'] = $this->config->clientId;
+            $body['client_secret'] = $this->config->clientSecret;
+        } else {
+            $request = $request->withBasicAuth($this->config->clientId, $this->config->clientSecret);
+        }
+
+        $response = $request->post($this->config->tokenUrl, $body);
 
         if ($response->failed()) {
             throw IntegrationException::requestFailed('oauth', $response->json('error_description')
                 ?? $response->json('error')
                 ?? 'HTTP '.$response->status());
+        }
+
+        // Zoho answers a rejected grant with HTTP 200 and an "error" key, so a
+        // successful status alone is not proof the exchange worked.
+        if ($response->json('error') !== null) {
+            throw IntegrationException::requestFailed('oauth', (string) $response->json('error'));
         }
 
         $credentials = [
