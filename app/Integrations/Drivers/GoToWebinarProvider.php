@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\Http;
 
 /**
  * Driver for the GoToWebinar API (v2), authenticated with a GoTo OAuth2 access
- * token. GoToWebinar is scoped by an organizer key that arrives in the OAuth
- * token response and is stored alongside the tokens.
+ * token. GoToWebinar is scoped by an organizer key that is fetched from GoTo's
+ * identity endpoint during connection and stored alongside the tokens.
  *
  * A "remote list" is a webinar, and pushing a contact registers them as a
  * registrant on that webinar.
@@ -33,6 +33,11 @@ class GoToWebinarProvider implements AutoresponderProvider
     private const NAME_FALLBACK = 'Subscriber';
 
     /**
+     * GoTo's maximum page size for the webinars endpoint.
+     */
+    private const WEBINARS_PAGE_SIZE = 200;
+
+    /**
      * @param  array{access_token?: string, organizer_key?: string}  $credentials
      */
     public function __construct(
@@ -47,7 +52,9 @@ class GoToWebinarProvider implements AutoresponderProvider
             return false;
         }
 
-        return $this->client()->get("/organizers/{$organizerKey}/webinars")->successful();
+        $query = $this->webinarWindow() + ['page' => 0, 'size' => 1];
+
+        return $this->client()->get("/organizers/{$organizerKey}/webinars", $query)->successful();
     }
 
     public function lists(): array
@@ -58,13 +65,26 @@ class GoToWebinarProvider implements AutoresponderProvider
             throw IntegrationException::requestFailed('gotowebinar', 'Missing organizer key for the connection.');
         }
 
-        $response = $this->client()->get("/organizers/{$organizerKey}/webinars");
+        $webinars = [];
+        $page = 0;
 
-        if ($response->failed()) {
-            throw IntegrationException::requestFailed('gotowebinar', $this->errorMessage($response));
-        }
+        do {
+            $response = $this->client()->get("/organizers/{$organizerKey}/webinars", $this->webinarWindow() + [
+                'page' => $page,
+                'size' => self::WEBINARS_PAGE_SIZE,
+            ]);
 
-        return collect($this->webinars($response))
+            if ($response->failed()) {
+                throw IntegrationException::requestFailed('gotowebinar', $this->errorMessage($response));
+            }
+
+            $webinars = array_merge($webinars, $this->webinars($response));
+
+            $totalPages = (int) $response->json('page.totalPages', 1);
+            $page++;
+        } while ($page < $totalPages);
+
+        return collect($webinars)
             ->map(fn (array $webinar): RemoteList => new RemoteList(
                 id: (string) $webinar['webinarKey'],
                 name: (string) $webinar['subject'],
@@ -131,6 +151,21 @@ class GoToWebinarProvider implements AutoresponderProvider
         $id = $response->json('registrantKey');
 
         return $id === null ? null : (string) $id;
+    }
+
+    /**
+     * The fromTime/toTime window GoTo requires on the webinars endpoint. Only
+     * webinars that can still accept registrants matter here, so the window
+     * runs from a day ago (to include in-progress sessions) to a year out.
+     *
+     * @return array{fromTime: string, toTime: string}
+     */
+    private function webinarWindow(): array
+    {
+        return [
+            'fromTime' => now('UTC')->subDay()->format('Y-m-d\TH:i:s\Z'),
+            'toTime' => now('UTC')->addYear()->format('Y-m-d\TH:i:s\Z'),
+        ];
     }
 
     private function organizerKey(): ?string

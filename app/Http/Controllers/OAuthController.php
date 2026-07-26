@@ -73,11 +73,15 @@ class OAuthController extends Controller
         }
 
         try {
-            $tokens = (new OAuthClient($provider->oauthConfig()))->exchangeCode(
+            $client = new OAuthClient($provider->oauthConfig());
+
+            $tokens = $client->exchangeCode(
                 code: (string) $request->query('code'),
                 codeVerifier: $session['code_verifier'],
                 redirectUri: $this->redirectUri(),
             );
+
+            $tokens = $client->withIdentityCredentials($tokens);
         } catch (IntegrationException) {
             return $this->backToIntegrations($team, 'error');
         }

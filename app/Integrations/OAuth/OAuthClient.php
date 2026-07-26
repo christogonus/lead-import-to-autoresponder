@@ -80,6 +80,45 @@ class OAuthClient
     }
 
     /**
+     * Merge in credential fields fetched from the provider's identity endpoint
+     * (e.g. GoToWebinar's organizer key, which its token response no longer
+     * carries). Nothing is fetched when the config declares no identity fields
+     * or every mapped field is already present.
+     *
+     * @param  array<string, mixed>  $credentials
+     * @return array<string, mixed>
+     */
+    public function withIdentityCredentials(array $credentials): array
+    {
+        $missing = array_filter(
+            $this->config->identityFields,
+            fn (string $key): bool => ! isset($credentials[$key]),
+        );
+
+        if ($missing === [] || $this->config->identityUrl === null) {
+            return $credentials;
+        }
+
+        $response = Http::withToken((string) ($credentials['access_token'] ?? ''))
+            ->acceptJson()
+            ->get($this->config->identityUrl);
+
+        if ($response->failed()) {
+            throw IntegrationException::requestFailed('oauth', 'HTTP '.$response->status());
+        }
+
+        foreach ($missing as $field => $key) {
+            $value = $response->json($field);
+
+            if ($value !== null) {
+                $credentials[$key] = $value;
+            }
+        }
+
+        return $credentials;
+    }
+
+    /**
      * @param  array<string, string>  $body
      * @return array<string, mixed>
      */

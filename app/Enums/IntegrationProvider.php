@@ -101,11 +101,15 @@ enum IntegrationProvider: string
                 clientId: (string) config('services.gotowebinar.client_id'),
                 clientSecret: (string) config('services.gotowebinar.client_secret'),
                 // GoTo derives scopes from the OAuth client and uses a confidential
-                // client (client secret) rather than PKCE. The organizer key it
-                // returns with the tokens is needed for every API call.
+                // client (client secret) rather than PKCE. The organizer key every
+                // API call needs is absent from the modern token response (only the
+                // legacy Citrix endpoint included it), so it is fetched from the
+                // admin "me" endpoint instead.
                 scopes: [],
                 usesPkce: false,
                 extraTokenFields: ['organizer_key', 'account_key'],
+                identityUrl: 'https://api.getgo.com/admin/rest/v1/me',
+                identityFields: ['key' => 'organizer_key', 'accountKey' => 'account_key'],
             ),
             self::ZohoCampaigns => new OAuthConfig(
                 authorizeUrl: 'https://accounts.zoho.'.self::zohoRegion().'/oauth/v2/auth',

@@ -61,10 +61,13 @@ class IntegrationManager
             return $credentials;
         }
 
-        $tokens = (new OAuthClient($integration->provider->oauthConfig()))
-            ->refresh((string) ($credentials['refresh_token'] ?? ''));
+        $client = new OAuthClient($integration->provider->oauthConfig());
 
-        $credentials = array_merge($credentials, $tokens);
+        $tokens = $client->refresh((string) ($credentials['refresh_token'] ?? ''));
+
+        // Also backfills identity-derived fields (e.g. GoToWebinar's organizer
+        // key) for connections stored without them.
+        $credentials = $client->withIdentityCredentials(array_merge($credentials, $tokens));
 
         $integration->update([
             'credentials' => $credentials,

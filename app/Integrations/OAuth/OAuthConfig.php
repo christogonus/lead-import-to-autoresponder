@@ -26,6 +26,12 @@ class OAuthConfig
      *                                  (Zoho) require commas.
      * @param  bool  $credentialsInBody  Send the client id/secret as form fields
      *                                   rather than HTTP Basic auth.
+     * @param  ?string  $identityUrl  Endpoint queried with the access token for
+     *                                credentials the token response does not
+     *                                carry (e.g. GoToWebinar's organizer key).
+     * @param  array<string, string>  $identityFields  Map of identity-response
+     *                                                 field to the credential key
+     *                                                 it is stored under.
      */
     public function __construct(
         public readonly string $authorizeUrl,
@@ -38,6 +44,8 @@ class OAuthConfig
         public readonly array $extraAuthorizeParams = [],
         public readonly string $scopeSeparator = ' ',
         public readonly bool $credentialsInBody = false,
+        public readonly ?string $identityUrl = null,
+        public readonly array $identityFields = [],
     ) {}
 
     /**

@@ -17,7 +17,7 @@ function oauthClient(): OAuthClient
     ));
 }
 
-function oauthClientWith(bool $usesPkce = true, array $scopes = ['account.read'], array $extraTokenFields = []): OAuthClient
+function oauthClientWith(bool $usesPkce = true, array $scopes = ['account.read'], array $extraTokenFields = [], ?string $identityUrl = null, array $identityFields = []): OAuthClient
 {
     return new OAuthClient(new OAuthConfig(
         authorizeUrl: 'https://auth.example.com/authorize',
@@ -27,6 +27,8 @@ function oauthClientWith(bool $usesPkce = true, array $scopes = ['account.read']
         scopes: $scopes,
         usesPkce: $usesPkce,
         extraTokenFields: $extraTokenFields,
+        identityUrl: $identityUrl,
+        identityFields: $identityFields,
     ));
 }
 
@@ -84,6 +86,43 @@ test('extra token fields absent from a response are not included', function () {
 
     expect($tokens)->not->toHaveKey('organizer_key');
 });
+
+test('identity fields are fetched and mapped into the credentials', function () {
+    Http::fake(['id.example.com/me' => Http::response(['key' => 'org-1', 'accountKey' => 'acct-1'], 200)]);
+
+    $credentials = oauthClientWith(
+        identityUrl: 'https://id.example.com/me',
+        identityFields: ['key' => 'organizer_key', 'accountKey' => 'account_key'],
+    )->withIdentityCredentials(['access_token' => 'access-1']);
+
+    expect($credentials['organizer_key'])->toBe('org-1')
+        ->and($credentials['account_key'])->toBe('acct-1');
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://id.example.com/me'
+        && $request->hasHeader('Authorization', 'Bearer access-1'));
+});
+
+test('the identity endpoint is not queried when the mapped fields are already present', function () {
+    Http::fake();
+
+    $credentials = oauthClientWith(
+        identityUrl: 'https://id.example.com/me',
+        identityFields: ['key' => 'organizer_key'],
+    )->withIdentityCredentials(['access_token' => 'access-1', 'organizer_key' => 'org-1']);
+
+    expect($credentials['organizer_key'])->toBe('org-1');
+
+    Http::assertNothingSent();
+});
+
+test('an identity endpoint failure throws', function () {
+    Http::fake(['id.example.com/me' => Http::response([], 500)]);
+
+    oauthClientWith(
+        identityUrl: 'https://id.example.com/me',
+        identityFields: ['key' => 'organizer_key'],
+    )->withIdentityCredentials(['access_token' => 'access-1']);
+})->throws(IntegrationException::class);
 
 test('exchangeCode posts the code with basic auth and verifier and returns tokens', function () {
     Http::fake(['auth.example.com/token' => Http::response([

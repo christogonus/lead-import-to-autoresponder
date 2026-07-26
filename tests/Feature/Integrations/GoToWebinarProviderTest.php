@@ -10,7 +10,7 @@ function goToWebinar(array $credentials = ['access_token' => 'test-token', 'orga
 }
 
 test('verify returns true for a valid token', function () {
-    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars' => Http::response([], 200)]);
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars*' => Http::response([], 200)]);
 
     expect(goToWebinar()->verify())->toBeTrue();
 
@@ -18,7 +18,7 @@ test('verify returns true for a valid token', function () {
 });
 
 test('verify returns false when the token is rejected', function () {
-    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars' => Http::response(['description' => 'Unauthorized'], 401)]);
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars*' => Http::response(['description' => 'Unauthorized'], 401)]);
 
     expect(goToWebinar()->verify())->toBeFalse();
 });
@@ -32,7 +32,7 @@ test('verify returns false without an organizer key and makes no request', funct
 });
 
 test('lists maps webinars returned as a plain array', function () {
-    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars' => Http::response([
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars*' => Http::response([
         ['webinarKey' => 111, 'subject' => 'Launch Webinar'],
         ['webinarKey' => 222, 'subject' => 'Demo Day'],
     ], 200)]);
@@ -43,10 +43,15 @@ test('lists maps webinars returned as a plain array', function () {
         ->and($lists[0]->id)->toBe('111')
         ->and($lists[0]->name)->toBe('Launch Webinar')
         ->and($lists[1]->id)->toBe('222');
+
+    // GoTo rejects the request outright without a fromTime/toTime window.
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'fromTime=')
+        && str_contains($request->url(), 'toTime=')
+        && str_contains($request->url(), 'size=200'));
 });
 
 test('lists also handles a HAL embedded envelope', function () {
-    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars' => Http::response([
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars*' => Http::response([
         '_embedded' => ['webinars' => [['webinarKey' => 333, 'subject' => 'Quarterly Update']]],
     ], 200)]);
 
@@ -55,6 +60,29 @@ test('lists also handles a HAL embedded envelope', function () {
     expect($lists)->toHaveCount(1)
         ->and($lists[0]->id)->toBe('333')
         ->and($lists[0]->name)->toBe('Quarterly Update');
+});
+
+test('lists walks every page of a paginated response', function () {
+    Http::fake([
+        'api.getgo.com/G2W/rest/v2/organizers/999/webinars*' => Http::sequence()
+            ->push([
+                '_embedded' => ['webinars' => [['webinarKey' => 111, 'subject' => 'Page One']]],
+                'page' => ['totalPages' => 2, 'number' => 0],
+            ])
+            ->push([
+                '_embedded' => ['webinars' => [['webinarKey' => 222, 'subject' => 'Page Two']]],
+                'page' => ['totalPages' => 2, 'number' => 1],
+            ]),
+    ]);
+
+    $lists = goToWebinar()->lists();
+
+    expect($lists)->toHaveCount(2)
+        ->and($lists[0]->name)->toBe('Page One')
+        ->and($lists[1]->name)->toBe('Page Two');
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'page=0'));
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'page=1'));
 });
 
 test('pushContact registers the contact and returns the registrant key', function () {
