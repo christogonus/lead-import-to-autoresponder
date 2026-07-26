@@ -2,6 +2,7 @@
 
 use App\Enums\ContactStatus;
 use App\Enums\IntegrationProvider;
+use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
 use App\Jobs\PushDeliveryContact;
 use App\Models\Contact;
@@ -61,6 +62,17 @@ test('zoho pushes are capped at the documented call rate per integration', funct
     expect($limit)->not->toBeInstanceOf(Unlimited::class)
         ->and($limit->maxAttempts)->toBe(ZohoCampaignsProvider::CALLS_PER_MINUTE_LIMIT)
         ->and($limit->decaySeconds)->toBe(60)
+        ->and($limit->key)->toContain((string) $deliveryContact->delivery->integration_id);
+});
+
+test('gotowebinar pushes are capped at goto documented per-second rate per integration', function () {
+    $deliveryContact = pendingPushFor(IntegrationProvider::GoToWebinar);
+
+    $limit = RateLimiter::limiter('autoresponder-push')(new PushDeliveryContact($deliveryContact));
+
+    expect($limit)->not->toBeInstanceOf(Unlimited::class)
+        ->and($limit->maxAttempts)->toBe(GoToWebinarProvider::CALLS_PER_SECOND_LIMIT)
+        ->and($limit->decaySeconds)->toBe(1)
         ->and($limit->key)->toContain((string) $deliveryContact->delivery->integration_id);
 });
 

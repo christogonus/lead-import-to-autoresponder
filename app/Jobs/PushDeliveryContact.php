@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\ContactStatus;
 use App\Integrations\IntegrationManager;
 use App\Integrations\Support\ContactPayload;
+use App\Integrations\Support\ContactSyncResult;
 use App\Models\Delivery;
 use App\Models\DeliveryContact;
 use DateTimeInterface;
@@ -29,6 +30,15 @@ class PushDeliveryContact implements ShouldQueue
      * reserved for real errors.
      */
     public int $maxExceptions = 3;
+
+    /**
+     * HTTP statuses meaning the destination temporarily could not take the
+     * push — provider-side throttling or a gateway blip — rather than that it
+     * rejected the contact. These are retried, not recorded as failures.
+     *
+     * @var array<int, int>
+     */
+    private const TRANSIENT_STATUSES = [429, 502, 503, 504];
 
     /**
      * Create a new job instance.
@@ -116,6 +126,21 @@ class PushDeliveryContact implements ShouldQueue
 
         $error = $result->error ?? 'Unknown error.';
 
+        // A throttled or momentarily-unavailable destination has not rejected
+        // the contact; put the job back in line and let it try again.
+        if ($this->isTransientFailure($result)) {
+            Log::warning('Autoresponder contact push throttled; released for retry.', [
+                ...$this->logContext($deliveryContact),
+                'error' => $error,
+                'response' => $result->context,
+                'attempts' => $this->attempts(),
+            ]);
+
+            $this->release(random_int(10, 30));
+
+            return;
+        }
+
         Log::error('Autoresponder contact push failed.', [
             ...$this->logContext($deliveryContact),
             'error' => $error,
@@ -123,6 +148,14 @@ class PushDeliveryContact implements ShouldQueue
         ]);
 
         $deliveryContact->markFailed($error);
+    }
+
+    /**
+     * Whether the failed push can be expected to succeed on a later attempt.
+     */
+    private function isTransientFailure(ContactSyncResult $result): bool
+    {
+        return in_array($result->context['status'] ?? null, self::TRANSIENT_STATUSES, true);
     }
 
     /**

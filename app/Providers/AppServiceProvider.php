@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Enums\IntegrationProvider;
+use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
 use App\Jobs\PushDeliveryContact;
 use Carbon\CarbonImmutable;
@@ -33,22 +34,24 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Cap autoresponder pushes at the queue for providers that punish bursts.
-     * Zoho locks an integration out for 30 minutes when it crosses its
-     * documented call rate, so the cap cannot be left to the optional pacing
-     * the user picks in the send dialog.
+     * Cap autoresponder pushes at the queue for providers that punish bursts:
+     * Zoho locks an integration out for 30 minutes past its documented call
+     * rate, and GoTo's spike arrest 429s anything above its per-second limit.
+     * The cap cannot be left to the optional pacing the user picks in the
+     * send dialog.
      */
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('autoresponder-push', function (PushDeliveryContact $job): Limit {
             $integration = $job->deliveryContact->delivery?->integration;
 
-            if ($integration?->provider !== IntegrationProvider::ZohoCampaigns) {
-                return Limit::none();
-            }
-
-            return Limit::perMinute(ZohoCampaignsProvider::CALLS_PER_MINUTE_LIMIT)
-                ->by('zoho-campaigns:'.$integration->id);
+            return match ($integration?->provider) {
+                IntegrationProvider::ZohoCampaigns => Limit::perMinute(ZohoCampaignsProvider::CALLS_PER_MINUTE_LIMIT)
+                    ->by('zoho-campaigns:'.$integration->id),
+                IntegrationProvider::GoToWebinar => Limit::perSecond(GoToWebinarProvider::CALLS_PER_SECOND_LIMIT)
+                    ->by('gotowebinar:'.$integration->id),
+                default => Limit::none(),
+            };
         });
     }
 

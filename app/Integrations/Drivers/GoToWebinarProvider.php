@@ -26,6 +26,14 @@ class GoToWebinarProvider implements AutoresponderProvider
     private const BASE_URL = 'https://api.getgo.com/G2W/rest/v2';
 
     /**
+     * GoTo's documented default rate limit. Its "spike arrest" answers anything
+     * faster with HTTP 429s, so pushes are throttled to this at the queue.
+     *
+     * @see https://developer.goto.com/guides/References/Ref-Rate-Limits/
+     */
+    public const CALLS_PER_SECOND_LIMIT = 10;
+
+    /**
      * GoToWebinar rejects registrants without a first and last name. Names are
      * derived from the email where possible; this is the last resort for an
      * address with nothing name-like in it (e.g. "12345@example.com").

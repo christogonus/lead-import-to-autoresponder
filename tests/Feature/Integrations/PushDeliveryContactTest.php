@@ -51,6 +51,25 @@ test('a pending delivery contact is pushed and marked synced, and the delivery c
         && $request['campaign']['campaignId'] === 'camp123');
 });
 
+test('a throttled push is released for retry instead of being marked failed', function () {
+    Http::fake(['api.getresponse.com/v3/contacts' => Http::response(
+        ['message' => 'Too many requests on server. Please try again in a few seconds.'],
+        429,
+    )]);
+
+    $deliveryContact = pendingDeliveryContact();
+
+    PushDeliveryContact::dispatchSync($deliveryContact);
+
+    // The contact is still waiting its turn, not recorded as a failure.
+    expect($deliveryContact->fresh()->status)->toBe(ContactStatus::Pending)
+        ->and($deliveryContact->fresh()->sync_error)->toBeNull();
+
+    $delivery = $deliveryContact->delivery->fresh();
+    expect($delivery->failed_count)->toBe(0)
+        ->and($delivery->status)->toBe(Delivery::STATUS_PROCESSING);
+});
+
 test('a rejected delivery contact is marked failed with the error and counted', function () {
     Http::fake(['api.getresponse.com/v3/contacts' => Http::response(['message' => 'Invalid email address'], 400)]);
 
