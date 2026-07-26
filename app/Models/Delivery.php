@@ -90,6 +90,10 @@ class Delivery extends Model
         $pending = (int) $counts->get(ContactStatus::Pending->value, 0);
 
         $attributes = [
+            // Refreshed alongside the outcome counts: deleting a contact
+            // cascades its delivery rows away, and a total frozen at creation
+            // would leave the delivery reading "9 of 10 synced" forever.
+            'total_count' => (int) $counts->sum(),
             'synced_count' => (int) $counts->get(ContactStatus::Synced->value, 0),
             'failed_count' => (int) $counts->get(ContactStatus::Failed->value, 0),
         ];

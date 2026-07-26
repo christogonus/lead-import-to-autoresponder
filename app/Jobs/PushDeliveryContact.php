@@ -7,8 +7,10 @@ use App\Integrations\IntegrationManager;
 use App\Integrations\Support\ContactPayload;
 use App\Models\Delivery;
 use App\Models\DeliveryContact;
+use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -21,9 +23,12 @@ class PushDeliveryContact implements ShouldQueue
     use Queueable;
 
     /**
-     * The number of times the job may be attempted.
+     * The number of exception-throwing attempts before the job fails. Attempts
+     * themselves are unbounded (see retryUntil) because a rate-limited release
+     * also consumes an attempt, and waiting in line must not burn the retries
+     * reserved for real errors.
      */
-    public int $tries = 3;
+    public int $maxExceptions = 3;
 
     /**
      * Create a new job instance.
@@ -40,6 +45,25 @@ class PushDeliveryContact implements ShouldQueue
     public function backoff(): array
     {
         return [10, 30, 60];
+    }
+
+    /**
+     * How long the job may keep being attempted, bounding the rate-limited
+     * releases that maxExceptions deliberately does not count.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addDay();
+    }
+
+    /**
+     * Get the middleware the job should pass through.
+     *
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [new RateLimited('autoresponder-push')];
     }
 
     /**

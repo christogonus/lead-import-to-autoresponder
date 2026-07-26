@@ -242,6 +242,97 @@ test('a cancelled delivery cannot be retried back onto the queue', function () {
     expect($delivery->fresh()->status)->toBe(Delivery::STATUS_CANCELLED);
 });
 
+test('deleting the last pending contact completes its delivery instead of leaving it sending', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $list = listForUser($user);
+    Contact::factory()->count(2)->create(['team_id' => $list->team_id, 'contact_list_id' => $list->id]);
+    $integration = Integration::factory()->create(['team_id' => $user->currentTeam->id]);
+
+    $delivery = app(SendListToDestination::class)->handle($list, $integration, 'camp1');
+
+    [$synced, $pending] = $delivery->deliveryContacts()->orderBy('id')->get();
+    $synced->markSynced('remote-1');
+
+    $this->actingAs($user);
+
+    // Deleting cascades the pending delivery row away, so without a recount no
+    // push would ever report back and the delivery would stay "Sending".
+    Livewire::test('pages::lists.show', ['contactList' => $list])
+        ->call('deleteContact', $pending->contact)
+        ->assertHasNoErrors();
+
+    $delivery = $delivery->fresh();
+
+    expect($delivery->status)->toBe(Delivery::STATUS_COMPLETED)
+        ->and($delivery->total_count)->toBe(1)
+        ->and($delivery->synced_count)->toBe(1);
+});
+
+test('retrying requeues only the failed contacts, not ones still in flight', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $list = listForUser($user);
+    Contact::factory()->count(3)->create(['team_id' => $list->team_id, 'contact_list_id' => $list->id]);
+    $integration = Integration::factory()->create(['team_id' => $user->currentTeam->id]);
+
+    $delivery = app(SendListToDestination::class)->handle($list, $integration, 'camp1');
+
+    $contacts = $delivery->deliveryContacts()->orderBy('id')->get();
+    $contacts[0]->markFailed('Invalid email address');
+
+    // The other two are still pending, with their original jobs on the queue.
+    Queue::fake();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.show', ['contactList' => $list])
+        ->call('retryDelivery', $delivery)
+        ->assertHasNoErrors();
+
+    Queue::assertPushed(PushDeliveryContact::class, 1);
+    Queue::assertPushed(PushDeliveryContact::class, fn (PushDeliveryContact $job) => $job->deliveryContact->is($contacts[0]));
+
+    expect($contacts[0]->fresh()->status)->toBe(ContactStatus::Pending)
+        ->and($contacts[0]->fresh()->sync_error)->toBeNull()
+        ->and($delivery->fresh()->failed_count)->toBe(0)
+        ->and($delivery->fresh()->status)->toBe(Delivery::STATUS_PROCESSING);
+});
+
+test('retrying a paced delivery re-pools only the failed contacts and restarts the clock', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $list = listForUser($user);
+    Contact::factory()->count(3)->create(['team_id' => $list->team_id, 'contact_list_id' => $list->id]);
+    $integration = Integration::factory()->create(['team_id' => $user->currentTeam->id]);
+
+    $delivery = app(SendListToDestination::class)->handle($list, $integration, 'camp1', null, 600);
+
+    $contacts = $delivery->deliveryContacts()->orderBy('id')->get();
+
+    // One contact already released by the drip and awaiting its push; one failed.
+    $contacts[0]->forceFill(['released_at' => now()])->save();
+    $contacts[1]->markFailed('Invalid email address');
+
+    $this->travel(1)->minutes();
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.show', ['contactList' => $list])
+        ->call('retryDelivery', $delivery)
+        ->assertHasNoErrors();
+
+    expect($contacts[0]->fresh()->released_at)->not->toBeNull()
+        ->and($contacts[1]->fresh()->status)->toBe(ContactStatus::Pending)
+        ->and($contacts[1]->fresh()->released_at)->toBeNull()
+        ->and($delivery->fresh()->pacing_started_at->timestamp)->toBe(now()->timestamp);
+
+    // Paced retries wait for the drip; nothing is queued directly.
+    Queue::assertNothingPushed();
+});
+
 test('contacts can be searched by an email fragment', function () {
     $user = User::factory()->create();
     $list = listForUser($user);

@@ -3,6 +3,7 @@
 use App\Actions\Contacts\ImportContacts;
 use App\Actions\Contacts\ParseDelimitedContacts;
 use App\Actions\Deliveries\SendListToDestination;
+use App\Actions\Lists\SplitContactList;
 use App\Enums\ContactStatus;
 use App\Integrations\IntegrationManager;
 use App\Jobs\PushDeliveryContact;
@@ -88,6 +89,9 @@ new #[Title('List')] class extends Component
 
     /** Contacts queued per hour. Empty means send everything at once. */
     public ?int $sendContactsPerHour = null;
+
+    /** Contacts per list when splitting this list into smaller ones. */
+    public ?int $splitSize = null;
 
     public function mount(ContactList $contactList): void
     {
@@ -259,6 +263,25 @@ new #[Title('List')] class extends Component
         ]));
     }
 
+    public function splitList(SplitContactList $splitter): void
+    {
+        $count = $this->contactsCount;
+
+        $this->validate(
+            ['splitSize' => ['required', 'integer', 'min:1', 'lt:'.max($count, 1)]],
+            ['splitSize.lt' => __('Choose a size smaller than the whole list — :count or more would just copy it.', ['count' => $count])],
+        );
+
+        $splits = $splitter->handle($this->contactList, (int) $this->splitSize);
+
+        $this->reset('splitSize');
+        $this->dispatch('close-modal', name: 'split-list');
+
+        Flux::toast(variant: 'success', text: trans_choice('{1}Created :count list.|[2,*]Created :count lists.', $splits->count(), ['count' => $splits->count()]));
+
+        $this->redirectRoute('lists.index', navigate: true);
+    }
+
     public function cancelDelivery(Delivery $delivery): void
     {
         abort_unless($delivery->contact_list_id === $this->contactList->id, 403);
@@ -303,8 +326,11 @@ new #[Title('List')] class extends Component
 
         $paced = $delivery->isPaced();
 
+        // Only contacts that actually failed: a retry can land while the
+        // delivery is still processing, and sweeping pending contacts along
+        // would queue a second push for ones already in flight.
         $delivery->deliveryContacts()
-            ->where('status', '!=', ContactStatus::Synced)
+            ->where('status', ContactStatus::Failed)
             ->get()
             ->each(function (DeliveryContact $deliveryContact) use ($paced): void {
                 $deliveryContact->update([
@@ -325,6 +351,12 @@ new #[Title('List')] class extends Component
             'pacing_started_at' => $paced ? now() : null,
         ]);
 
+        // Settle the counts so the failed badge clears now rather than when
+        // the first retried push reports back.
+        $delivery->recount();
+
+        unset($this->deliveries);
+
         Flux::toast(variant: 'success', text: __('Retrying failed contacts.'));
     }
 
@@ -332,7 +364,16 @@ new #[Title('List')] class extends Component
     {
         abort_unless($contact->contact_list_id === $this->contactList->id, 403);
 
+        $deliveryIds = $contact->deliveryContacts()->pluck('delivery_id');
+
         $contact->delete();
+
+        // The delete cascades the contact's delivery rows away without any push
+        // reporting back, so recount here — otherwise a delivery whose last
+        // pending contact just vanished would read "Sending" forever.
+        Delivery::query()->findMany($deliveryIds)->each->recount();
+
+        unset($this->deliveries);
 
         Flux::toast(variant: 'success', text: __('Contact removed.'));
     }
@@ -463,6 +504,28 @@ new #[Title('List')] class extends Component
     }
 
     /**
+     * What the chosen split size would produce, so the outcome is visible
+     * before the lists are actually created.
+     */
+    #[Computed]
+    public function splitEstimate(): ?string
+    {
+        $count = $this->contactsCount;
+
+        if (! $this->splitSize || $this->splitSize < 1 || $this->splitSize >= $count) {
+            return null;
+        }
+
+        $chunks = (int) ceil($count / $this->splitSize);
+
+        return __('Will create :chunks lists, ":first" through ":last". This list is left untouched.', [
+            'chunks' => $chunks,
+            'first' => "{$this->contactList->name} {$this->splitSize} 1",
+            'last' => "{$this->contactList->name} {$this->splitSize} {$chunks}",
+        ]);
+    }
+
+    /**
      * @return Collection<int, Integration>
      */
     #[Computed]
@@ -538,6 +601,12 @@ new #[Title('List')] class extends Component
             <flux:modal.trigger name="import-contacts">
                 <flux:button variant="subtle" icon="arrow-up-tray" x-data="" x-on:click.prevent="$dispatch('open-modal', 'import-contacts')" data-test="import-button">
                     {{ __('Import') }}
+                </flux:button>
+            </flux:modal.trigger>
+
+            <flux:modal.trigger name="split-list">
+                <flux:button variant="subtle" icon="square-2-stack" x-data="" x-on:click.prevent="$dispatch('open-modal', 'split-list')" data-test="split-button" :disabled="$this->contactsCount < 2">
+                    {{ __('Split') }}
                 </flux:button>
             </flux:modal.trigger>
 
@@ -758,6 +827,38 @@ new #[Title('List')] class extends Component
                     <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
                 </flux:modal.close>
                 <flux:button variant="primary" type="submit" data-test="send-submit" :disabled="$this->integrations->isEmpty()">{{ __('Send') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    {{-- Split list modal --}}
+    <flux:modal name="split-list" :show="$errors->has('splitSize')" focusable class="max-w-lg">
+        <form wire:submit="splitList" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Split into smaller lists') }}</flux:heading>
+                <flux:subheading>{{ __('Copy these contacts into smaller numbered lists — handy when a provider caps how many subscribers you can import. This list stays as it is.') }}</flux:subheading>
+            </div>
+
+            <flux:input
+                wire:model.live.debounce.500ms="splitSize"
+                type="number"
+                min="1"
+                :label="__('Contacts per list')"
+                :placeholder="__('e.g. 700')"
+                data-test="split-size"
+            />
+
+            @if ($this->splitEstimate)
+                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400" data-test="split-estimate">
+                    {{ $this->splitEstimate }}
+                </flux:text>
+            @endif
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button variant="primary" type="submit" data-test="split-submit">{{ __('Split list') }}</flux:button>
             </div>
         </form>
     </flux:modal>
