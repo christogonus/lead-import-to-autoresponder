@@ -102,6 +102,17 @@ class Team extends Model
     }
 
     /**
+     * Get every send this team has made, including those whose list has since
+     * been deleted.
+     *
+     * @return HasMany<Delivery, $this>
+     */
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(Delivery::class);
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

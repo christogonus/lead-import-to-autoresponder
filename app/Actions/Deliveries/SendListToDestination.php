@@ -10,6 +10,7 @@ use App\Models\DeliveryContact;
 use App\Models\Integration;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
+use RuntimeException;
 
 /**
  * Sends a contact list to a destination (a connected integration + one of its
@@ -35,6 +36,8 @@ class SendListToDestination
      * send (every contact is already synced to this destination).
      *
      * @param  int|null  $contactsPerHour  Cap on how many contacts are queued per hour, or null to queue them all immediately.
+     *
+     * @throws RuntimeException when the list has been set aside as a draft.
      */
     public function handle(
         ContactList $list,
@@ -43,6 +46,10 @@ class SendListToDestination
         ?string $remoteName = null,
         ?int $contactsPerHour = null,
     ): ?Delivery {
+        if ($list->isDraft()) {
+            throw new RuntimeException('A drafted list cannot be sent to a destination.');
+        }
+
         $contacts = $list->contacts()
             ->whereNotIn('id', $this->contactsAlreadySynced($list, $integration, $remoteId));
 

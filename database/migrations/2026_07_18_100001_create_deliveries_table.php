@@ -14,7 +14,12 @@ return new class extends Migration
         Schema::create('deliveries', function (Blueprint $table) {
             $table->id();
             $table->foreignId('team_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('contact_list_id')->constrained()->cascadeOnDelete();
+            // Nulled rather than cascaded when a list is permanently deleted:
+            // what was pushed to a destination happened, and the record of it
+            // outlives the list. The name is snapshotted at that moment so an
+            // orphaned delivery still says which list it came from.
+            $table->foreignId('contact_list_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('contact_list_name')->nullable();
             $table->foreignId('integration_id')->constrained()->cascadeOnDelete();
             $table->string('remote_id');
             $table->string('remote_name')->nullable();

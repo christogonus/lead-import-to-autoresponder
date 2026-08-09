@@ -6,6 +6,7 @@ use App\Models\Contact;
 use App\Models\ContactList;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
+use RuntimeException;
 
 /**
  * Copies a list's contacts into new, smaller lists of at most the given size,
@@ -24,9 +25,15 @@ class SplitContactList
      * Split the list, returning the newly created lists in order.
      *
      * @return Collection<int, ContactList>
+     *
+     * @throws RuntimeException when the list has been set aside as a draft.
      */
     public function handle(ContactList $list, int $chunkSize): Collection
     {
+        if ($list->isDraft()) {
+            throw new RuntimeException('A drafted list cannot be split.');
+        }
+
         $splits = collect();
         $now = now();
 

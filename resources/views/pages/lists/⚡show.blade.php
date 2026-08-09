@@ -3,6 +3,7 @@
 use App\Actions\Contacts\ImportContacts;
 use App\Actions\Contacts\ParseDelimitedContacts;
 use App\Actions\Deliveries\SendListToDestination;
+use App\Actions\Lists\DeleteContactList;
 use App\Actions\Lists\SplitContactList;
 use App\Enums\ContactStatus;
 use App\Integrations\IntegrationManager;
@@ -17,6 +18,7 @@ use Flux\Flux;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -93,15 +95,107 @@ new #[Title('List')] class extends Component
     /** Contacts per list when splitting this list into smaller ones. */
     public ?int $splitSize = null;
 
+    /** Typed back by the user to confirm a permanent delete. */
+    public string $deleteName = '';
+
     public function mount(ContactList $contactList): void
     {
-        abort_unless($contactList->team_id === Auth::user()->currentTeam->id, 403);
+        Gate::authorize('view', $contactList);
 
         $this->contactList = $contactList;
     }
 
+    /**
+     * Set this list aside. Nothing is destroyed — the contacts stay put and the
+     * list can be restored, but it drops out of the working index and stops
+     * accepting new work until it is.
+     */
+    public function draftList(): void
+    {
+        Gate::authorize('draft', $this->contactList);
+
+        if ($this->contactList->isDraft()) {
+            return;
+        }
+
+        if (! $this->contactList->isDraftable()) {
+            Flux::toast(variant: 'warning', text: __('Finish or cancel the work still running on this list before setting it aside.'));
+
+            return;
+        }
+
+        $this->contactList->draft();
+
+        Flux::toast(variant: 'success', text: __('List moved to drafts. Its contacts were left untouched.'));
+    }
+
+    /**
+     * Bring a drafted list back into use.
+     */
+    public function restoreList(): void
+    {
+        Gate::authorize('draft', $this->contactList);
+
+        if (! $this->contactList->isDraft()) {
+            return;
+        }
+
+        $this->contactList->restoreFromDraft();
+
+        Flux::toast(variant: 'success', text: __('List restored.'));
+    }
+
+    /**
+     * Permanently delete a drafted list. This one has no undo, so it asks for
+     * the list's name back before going ahead.
+     */
+    public function deleteList(DeleteContactList $deleter): void
+    {
+        Gate::authorize('delete', $this->contactList);
+
+        if (! $this->contactList->isDeletable()) {
+            Flux::toast(variant: 'warning', text: __('Only a draft can be deleted. Move this list to drafts first.'));
+
+            return;
+        }
+
+        $validated = $this->validate([
+            'deleteName' => ['required', 'string'],
+        ]);
+
+        if ($validated['deleteName'] !== $this->contactList->name) {
+            $this->addError('deleteName', __('The list name does not match.'));
+
+            return;
+        }
+
+        $deleter->handle($this->contactList);
+
+        Flux::toast(variant: 'success', text: __('List deleted. Its contacts are gone for good; past deliveries were kept.'));
+
+        $this->redirectRoute('lists.index', navigate: true);
+    }
+
+    /**
+     * A drafted list is set aside, so nothing may be added to it or sent from
+     * it. The buttons are hidden too; this is the backstop for a request that
+     * arrives anyway — including one already in flight when it was drafted.
+     */
+    protected function abortIfDrafted(): void
+    {
+        abort_if($this->contactList->isDraft(), 403);
+    }
+
+    #[Computed]
+    public function deleteConfirmLabel(): string
+    {
+        return __('Type ":name" to confirm', ['name' => $this->contactList->name]);
+    }
+
     public function addContact(ImportContacts $import): void
     {
+        $this->abortIfDrafted();
+
         $this->validate([
             'manual.email' => ['required', 'email'],
             'manual.first_name' => ['nullable', 'string', 'max:255'],
@@ -125,6 +219,8 @@ new #[Title('List')] class extends Component
 
     public function parseSource(ParseDelimitedContacts $parser): void
     {
+        $this->abortIfDrafted();
+
         if ($this->importMode === 'upload') {
             $this->validate(['file' => ['required', 'file', 'mimes:csv,txt', 'max:10240']]);
             $path = $this->file->storeAs('imports', Str::uuid()->toString().'.csv', 'local');
@@ -159,6 +255,8 @@ new #[Title('List')] class extends Component
 
     public function runImport(ImportContacts $import, ParseDelimitedContacts $parser): void
     {
+        $this->abortIfDrafted();
+
         $this->validate(
             ['mapping.email' => ['required', 'string']],
             ['mapping.email.required' => __('Choose which column contains the email address.')],
@@ -220,6 +318,8 @@ new #[Title('List')] class extends Component
 
     public function sendToDestination(SendListToDestination $sender): void
     {
+        $this->abortIfDrafted();
+
         $validated = $this->validate([
             'sendIntegrationId' => ['required', 'integer'],
             'sendRemoteId' => ['required', 'string'],
@@ -265,6 +365,8 @@ new #[Title('List')] class extends Component
 
     public function splitList(SplitContactList $splitter): void
     {
+        $this->abortIfDrafted();
+
         $count = $this->contactsCount;
 
         $this->validate(
@@ -301,6 +403,10 @@ new #[Title('List')] class extends Component
 
     public function resumeDelivery(Delivery $delivery): void
     {
+        // Cancelling stays available on a draft — stopping work is always safe —
+        // but restarting a send from a list that was set aside is not.
+        $this->abortIfDrafted();
+
         abort_unless($delivery->contact_list_id === $this->contactList->id, 403);
 
         if (! $delivery->isResumable()) {
@@ -318,6 +424,8 @@ new #[Title('List')] class extends Component
 
     public function retryDelivery(Delivery $delivery): void
     {
+        $this->abortIfDrafted();
+
         abort_unless($delivery->contact_list_id === $this->contactList->id, 403);
 
         // A cancelled delivery is terminal: retrying would sweep its stood-down
@@ -587,36 +695,79 @@ new #[Title('List')] class extends Component
 
     <div class="flex items-center justify-between">
         <div>
-            <flux:heading size="xl">{{ $contactList->name }}</flux:heading>
+            <div class="flex items-center gap-2">
+                <flux:heading size="xl">{{ $contactList->name }}</flux:heading>
+                @if ($contactList->isDraft())
+                    <flux:badge size="sm" color="amber" data-test="draft-badge">{{ __('Draft') }}</flux:badge>
+                @endif
+            </div>
             <flux:subheading>{{ trans_choice('{0}No contacts yet|{1}:count contact|[2,*]:count contacts', $this->contactsCount, ['count' => $this->contactsCount]) }}</flux:subheading>
         </div>
 
         <div class="flex items-center gap-2">
-            <flux:modal.trigger name="add-contact">
-                <flux:button variant="subtle" icon="user-plus" x-data="" x-on:click.prevent="$dispatch('open-modal', 'add-contact')" data-test="add-contact-button">
-                    {{ __('Add contact') }}
+            @if ($contactList->isDraft())
+                <flux:button variant="primary" icon="arrow-uturn-left" wire:click="restoreList" data-test="restore-list-button">
+                    {{ __('Restore list') }}
                 </flux:button>
-            </flux:modal.trigger>
+            @else
+                <flux:modal.trigger name="add-contact">
+                    <flux:button variant="subtle" icon="user-plus" x-data="" x-on:click.prevent="$dispatch('open-modal', 'add-contact')" data-test="add-contact-button">
+                        {{ __('Add contact') }}
+                    </flux:button>
+                </flux:modal.trigger>
 
-            <flux:modal.trigger name="import-contacts">
-                <flux:button variant="subtle" icon="arrow-up-tray" x-data="" x-on:click.prevent="$dispatch('open-modal', 'import-contacts')" data-test="import-button">
-                    {{ __('Import') }}
-                </flux:button>
-            </flux:modal.trigger>
+                <flux:modal.trigger name="import-contacts">
+                    <flux:button variant="subtle" icon="arrow-up-tray" x-data="" x-on:click.prevent="$dispatch('open-modal', 'import-contacts')" data-test="import-button">
+                        {{ __('Import') }}
+                    </flux:button>
+                </flux:modal.trigger>
 
-            <flux:modal.trigger name="split-list">
-                <flux:button variant="subtle" icon="square-2-stack" x-data="" x-on:click.prevent="$dispatch('open-modal', 'split-list')" data-test="split-button" :disabled="$this->contactsCount < 2">
-                    {{ __('Split') }}
-                </flux:button>
-            </flux:modal.trigger>
+                <flux:modal.trigger name="split-list">
+                    <flux:button variant="subtle" icon="square-2-stack" x-data="" x-on:click.prevent="$dispatch('open-modal', 'split-list')" data-test="split-button" :disabled="$this->contactsCount < 2">
+                        {{ __('Split') }}
+                    </flux:button>
+                </flux:modal.trigger>
 
-            <flux:modal.trigger name="send-list">
-                <flux:button variant="primary" icon="paper-airplane" x-data="" x-on:click.prevent="$dispatch('open-modal', 'send-list')" data-test="send-button" :disabled="$this->contactsCount === 0">
-                    {{ __('Send to destination') }}
-                </flux:button>
-            </flux:modal.trigger>
+                <flux:modal.trigger name="send-list">
+                    <flux:button variant="primary" icon="paper-airplane" x-data="" x-on:click.prevent="$dispatch('open-modal', 'send-list')" data-test="send-button" :disabled="$this->contactsCount === 0">
+                        {{ __('Send to destination') }}
+                    </flux:button>
+                </flux:modal.trigger>
+            @endif
+
+            <flux:dropdown position="bottom" align="end">
+                <flux:button variant="subtle" icon="ellipsis-horizontal" square :aria-label="__('List actions')" data-test="list-actions-button" />
+
+                <flux:menu>
+                    @if ($contactList->isDraft())
+                        <flux:menu.item icon="arrow-uturn-left" wire:click="restoreList" data-test="restore-list">
+                            {{ __('Restore list') }}
+                        </flux:menu.item>
+
+                        @can('delete', $contactList)
+                            <flux:menu.separator />
+
+                            <flux:menu.item variant="danger" icon="trash" x-data="" x-on:click="$dispatch('open-modal', 'delete-list')" data-test="delete-list-button">
+                                {{ __('Delete permanently') }}
+                            </flux:menu.item>
+                        @endcan
+                    @else
+                        <flux:menu.item icon="archive-box" wire:click="draftList" data-test="draft-list">
+                            {{ __('Move to drafts') }}
+                        </flux:menu.item>
+                    @endif
+                </flux:menu>
+            </flux:dropdown>
         </div>
     </div>
+
+    @if ($contactList->isDraft())
+        <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700/60 dark:bg-amber-950/30" data-test="draft-notice">
+            <flux:text class="text-sm text-amber-900 dark:text-amber-200">
+                {{ __('This list is a draft. Its contacts are safe, but it accepts no imports or sends until you restore it. Deleting a draft is permanent.') }}
+            </flux:text>
+        </div>
+    @endif
 
     {{-- Deliveries --}}
     @if ($this->deliveries->isNotEmpty())
@@ -649,13 +800,13 @@ new #[Title('List')] class extends Component
                             </flux:button>
                         @endif
 
-                        @if ($delivery->isResumable())
+                        @if ($delivery->isResumable() && ! $contactList->isDraft())
                             <flux:button variant="subtle" size="sm" icon="play" wire:click="resumeDelivery({{ $delivery->id }})" data-test="resume-delivery-button">
                                 {{ __('Resume') }}
                             </flux:button>
                         @endif
 
-                        @if ($delivery->failed_count > 0 && $delivery->status !== App\Models\Delivery::STATUS_CANCELLED)
+                        @if ($delivery->failed_count > 0 && $delivery->status !== App\Models\Delivery::STATUS_CANCELLED && ! $contactList->isDraft())
                             <flux:button variant="subtle" size="sm" icon="arrow-path" wire:click="retryDelivery({{ $delivery->id }})" data-test="retry-delivery-button">
                                 {{ __('Retry :count failed', ['count' => $delivery->failed_count]) }}
                             </flux:button>
@@ -773,6 +924,36 @@ new #[Title('List')] class extends Component
     </div>
 
     <div>{{ $this->contacts->links() }}</div>
+
+    {{-- Delete draft modal --}}
+    @can('delete', $contactList)
+    <flux:modal name="delete-list" :show="$errors->has('deleteName')" focusable class="max-w-lg">
+        <form wire:submit="deleteList" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Delete this list?') }}</flux:heading>
+                <flux:subheading>
+                    {{ trans_choice(
+                        '{0}This cannot be undone. ":name" will be deleted for good.|{1}This cannot be undone. ":name" and its :count contact will be deleted for good.|[2,*]This cannot be undone. ":name" and its :count contacts will be deleted for good.',
+                        $this->contactsCount,
+                        ['name' => $contactList->name, 'count' => number_format($this->contactsCount)],
+                    ) }}
+                    {{ __('Past deliveries are kept as a record of what was already sent, and stay visible under Deliveries.') }}
+                </flux:subheading>
+            </div>
+
+            <flux:input wire:model="deleteName" :label="$this->deleteConfirmLabel" required data-test="delete-list-name" />
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button variant="danger" type="submit" data-test="delete-list-confirm">
+                    {{ __('Delete permanently') }}
+                </flux:button>
+            </div>
+        </form>
+    </flux:modal>
+    @endcan
 
     {{-- Send to destination modal --}}
     <flux:modal name="send-list" :show="$errors->has('sendIntegrationId') || $errors->has('sendRemoteId')" focusable class="max-w-lg">

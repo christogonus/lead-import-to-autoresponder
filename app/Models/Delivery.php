@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'team_id',
     'contact_list_id',
+    'contact_list_name',
     'integration_id',
     'remote_id',
     'remote_name',
@@ -217,6 +218,26 @@ class Delivery extends Model
     public function destinationLabel(): string
     {
         return $this->remote_name ?? $this->remote_id;
+    }
+
+    /**
+     * A human-readable label for the list this delivery was sent from, falling
+     * back to the name snapshotted when that list was permanently deleted.
+     */
+    public function listLabel(): string
+    {
+        return $this->contactList?->name
+            ?? $this->contact_list_name
+            ?? __('Deleted list');
+    }
+
+    /**
+     * Whether the list this delivery was sent from has since been deleted, so
+     * there is nowhere to link through to.
+     */
+    public function listWasDeleted(): bool
+    {
+        return $this->contact_list_id === null;
     }
 
     /**

@@ -6,6 +6,8 @@ use App\Models\Contact;
 use App\Models\ContactList;
 use App\Models\Import;
 use App\Models\User;
+use RuntimeException;
+use Throwable;
 
 /**
  * Imports a batch of normalized contact rows into a list: validates and
@@ -17,6 +19,8 @@ class ImportContacts
 {
     /**
      * @param  array<int, array{first_name?: ?string, last_name?: ?string, email?: ?string, phone?: ?string, country?: ?string}>  $rows
+     *
+     * @throws RuntimeException when the list has been set aside as a draft.
      */
     public function handle(
         ContactList $list,
@@ -25,6 +29,10 @@ class ImportContacts
         ?string $filename = null,
         ?User $user = null,
     ): Import {
+        if ($list->isDraft()) {
+            throw new RuntimeException('Contacts cannot be imported into a drafted list.');
+        }
+
         $import = Import::create([
             'team_id' => $list->team_id,
             'contact_list_id' => $list->id,
@@ -32,9 +40,29 @@ class ImportContacts
             'source' => $source,
             'filename' => $filename,
             'total_rows' => count($rows),
-            'status' => 'processing',
+            'status' => Import::STATUS_PROCESSING,
         ]);
 
+        try {
+            return $this->store($import, $list, $rows);
+        } catch (Throwable $e) {
+            // Never leave the row reading "processing": that state gates whether
+            // the list can be drafted, so a failed import that kept it would
+            // block the list until the staleness window expired.
+            $import->update(['status' => Import::STATUS_FAILED]);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Validate, de-duplicate, and store the rows, recording the outcome on the
+     * import.
+     *
+     * @param  array<int, array{first_name?: ?string, last_name?: ?string, email?: ?string, phone?: ?string, country?: ?string}>  $rows
+     */
+    private function store(Import $import, ContactList $list, array $rows): Import
+    {
         $existingEmails = $list->contacts()->pluck('email')
             ->map(fn (string $email): string => strtolower($email))
             ->flip();
@@ -98,7 +126,7 @@ class ImportContacts
             'imported_count' => $inserted,
             'skipped_count' => $skipped + ($imported - $inserted),
             'failed_count' => $failed,
-            'status' => 'completed',
+            'status' => Import::STATUS_COMPLETED,
         ]);
 
         return $import;

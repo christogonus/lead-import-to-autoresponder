@@ -6,12 +6,17 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 
 new #[Title('Lists')] class extends Component {
     #[Validate('required|string|max:255')]
     public string $name = '';
+
+    /** Which shelf to show: the lists in use, or the ones set aside as drafts. */
+    #[Url(except: 'active')]
+    public string $filter = 'active';
 
     public function createList(): void
     {
@@ -31,6 +36,21 @@ new #[Title('Lists')] class extends Component {
         return Auth::user()->currentTeam;
     }
 
+    public function showDrafts(): void
+    {
+        $this->filter = 'drafts';
+    }
+
+    public function showActive(): void
+    {
+        $this->filter = 'active';
+    }
+
+    public function showingDrafts(): bool
+    {
+        return $this->filter === 'drafts';
+    }
+
     /**
      * @return Collection<int, ContactList>
      */
@@ -38,9 +58,16 @@ new #[Title('Lists')] class extends Component {
     public function lists(): Collection
     {
         return $this->currentTeam()->contactLists()
+            ->when($this->showingDrafts(), fn ($query) => $query->drafted(), fn ($query) => $query->active())
             ->withCount(['contacts', 'deliveries'])
             ->latest()
             ->get();
+    }
+
+    #[Computed]
+    public function draftsCount(): int
+    {
+        return $this->currentTeam()->contactLists()->drafted()->count();
     }
 }; ?>
 
@@ -58,12 +85,29 @@ new #[Title('Lists')] class extends Component {
         </flux:modal.trigger>
     </div>
 
+    <flux:button.group>
+        <flux:button size="sm" :variant="$this->showingDrafts() ? 'ghost' : 'filled'" wire:click="showActive" data-test="filter-active">
+            {{ __('Active') }}
+        </flux:button>
+        <flux:button size="sm" :variant="$this->showingDrafts() ? 'filled' : 'ghost'" wire:click="showDrafts" data-test="filter-drafts">
+            {{ __('Drafts') }}
+            @if ($this->draftsCount > 0)
+                <flux:badge size="sm" color="amber" class="ml-2">{{ $this->draftsCount }}</flux:badge>
+            @endif
+        </flux:button>
+    </flux:button.group>
+
     <div class="space-y-3">
         @forelse ($this->lists as $list)
             <a href="{{ route('lists.show', $list) }}" wire:navigate class="block rounded-lg border border-zinc-200 bg-white p-4 transition hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600" data-test="list-row">
                 <div class="flex items-center justify-between">
                     <div>
-                        <span class="font-medium">{{ $list->name }}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium">{{ $list->name }}</span>
+                            @if ($list->isDraft())
+                                <flux:badge size="sm" color="amber" data-test="draft-badge">{{ __('Draft') }}</flux:badge>
+                            @endif
+                        </div>
                         <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
                             {{ trans_choice('{0}Sent to no destinations|{1}Sent to :count destination|[2,*]Sent to :count destinations', $list->deliveries_count, ['count' => $list->deliveries_count]) }}
                         </flux:text>
@@ -76,7 +120,13 @@ new #[Title('Lists')] class extends Component {
         @empty
             <flux:card class="text-center">
                 <flux:icon.rectangle-stack class="mx-auto mb-2 size-8 text-zinc-400" />
-                <flux:text>{{ __('No lists yet. Create one to import contacts.') }}</flux:text>
+                <flux:text>
+                    @if ($this->showingDrafts())
+                        {{ __('No drafts. Set a list aside from its page when you are done with it.') }}
+                    @else
+                        {{ __('No lists yet. Create one to import contacts.') }}
+                    @endif
+                </flux:text>
             </flux:card>
         @endforelse
     </div>

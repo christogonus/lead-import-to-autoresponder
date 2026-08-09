@@ -21,6 +21,17 @@ class ContactListFactory extends Factory
         return [
             'team_id' => Team::factory(),
             'name' => fake()->words(2, true),
+            'drafted_at' => null,
         ];
+    }
+
+    /**
+     * A list that has been set aside as a draft.
+     */
+    public function drafted(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'drafted_at' => now(),
+        ]);
     }
 }

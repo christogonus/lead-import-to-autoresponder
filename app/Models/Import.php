@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Database\Factories\ImportFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,6 +27,35 @@ class Import extends Model
 {
     /** @use HasFactory<ImportFactory> */
     use HasFactory;
+
+    public const STATUS_PROCESSING = 'processing';
+
+    public const STATUS_COMPLETED = 'completed';
+
+    public const STATUS_FAILED = 'failed';
+
+    /**
+     * How long an import may sit in "processing" before it is treated as dead.
+     *
+     * Imports run synchronously inside the request, so one still processing an
+     * hour later did not finish: the process died without unwinding — a request
+     * timeout or a memory limit — taking with it the chance to mark the row
+     * failed. Since a running import blocks its list from being drafted, a
+     * stranded row would otherwise block that list forever, with nothing in the
+     * UI able to clear it.
+     */
+    public const STALE_AFTER_MINUTES = 60;
+
+    /**
+     * Scope a query to imports that are genuinely still running, ignoring rows
+     * stranded in "processing" by a crash.
+     */
+    #[Scope]
+    protected function running(Builder $query): void
+    {
+        $query->where('status', self::STATUS_PROCESSING)
+            ->where('created_at', '>=', now()->subMinutes(self::STALE_AFTER_MINUTES));
+    }
 
     /**
      * Get the team the import belongs to.

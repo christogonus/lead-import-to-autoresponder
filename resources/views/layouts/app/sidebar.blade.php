@@ -22,6 +22,10 @@
                         {{ __('Lists') }}
                     </flux:sidebar.item>
 
+                    <flux:sidebar.item icon="paper-airplane" :href="route('deliveries.index')" :current="request()->routeIs('deliveries.*')" wire:navigate>
+                        {{ __('Deliveries') }}
+                    </flux:sidebar.item>
+
                     <flux:sidebar.item icon="puzzle-piece" :href="route('integrations.index')" :current="request()->routeIs('integrations.*')" wire:navigate>
                         {{ __('Integrations') }}
                     </flux:sidebar.item>

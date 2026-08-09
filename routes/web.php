@@ -16,6 +16,8 @@ Route::prefix('{current_team}')
 
         Route::livewire('lists', 'pages::lists.index')->name('lists.index');
         Route::livewire('lists/{contactList}', 'pages::lists.show')->name('lists.show');
+
+        Route::livewire('deliveries', 'pages::deliveries.index')->name('deliveries.index');
     });
 
 Route::middleware(['auth'])->group(function () {

@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['team_id', 'provider', 'name', 'credentials', 'status', 'last_verified_at'])]
 class Integration extends Model
@@ -24,16 +23,6 @@ class Integration extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
-    }
-
-    /**
-     * Get the contact lists that push to this integration.
-     *
-     * @return HasMany<ContactList, $this>
-     */
-    public function contactLists(): HasMany
-    {
-        return $this->hasMany(ContactList::class);
     }
 
     /**
