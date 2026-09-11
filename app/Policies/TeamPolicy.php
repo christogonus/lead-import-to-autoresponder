@@ -81,6 +81,18 @@ class TeamPolicy
     }
 
     /**
+     * Determine whether the user can permanently delete the team's drafted
+     * lists in one go.
+     *
+     * Held to the same bar as deleting a single draft: emptying the bin is that
+     * action repeated, not a lesser one.
+     */
+    public function deleteLists(User $user, Team $team): bool
+    {
+        return $user->belongsToTeam($team) && $user->hasTeamPermission($team, TeamPermission::DeleteList);
+    }
+
+    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Team $team): bool

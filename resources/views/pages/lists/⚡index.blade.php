@@ -1,9 +1,11 @@
 <?php
 
+use App\Actions\Lists\DeleteDraftedLists;
 use App\Models\ContactList;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -29,6 +31,43 @@ new #[Title('Lists')] class extends Component {
         Flux::toast(variant: 'success', text: __('List created.'));
 
         $this->redirectRoute('lists.show', ['contactList' => $list->id], navigate: true);
+    }
+
+    /**
+     * Empty the drafts shelf: every list on it is permanently deleted, with its
+     * contacts. Deliveries are kept, as they are when a draft is deleted one at
+     * a time.
+     */
+    public function emptyDrafts(DeleteDraftedLists $deleter): void
+    {
+        Gate::authorize('deleteLists', $this->currentTeam());
+
+        $deleted = $deleter->handle($this->currentTeam());
+
+        $this->dispatch('close-modal', name: 'empty-drafts');
+
+        // Counts and rows are computed per request, so they are recalculated on
+        // the response this call renders — only the cached values need clearing.
+        unset($this->lists, $this->draftsCount, $this->draftsContactsCount);
+
+        if ($deleted['lists'] === 0) {
+            Flux::toast(variant: 'warning', text: __('There were no drafts left to delete.'));
+
+            return;
+        }
+
+        Flux::toast(variant: 'success', text: trans_choice(
+            '{1}Deleted :count draft and :contacts.|[2,*]Deleted :count drafts and :contacts.',
+            $deleted['lists'],
+            [
+                'count' => number_format($deleted['lists']),
+                'contacts' => trans_choice(
+                    '{0}no contacts|{1}:count contact|[2,*]:count contacts',
+                    $deleted['contacts'],
+                    ['count' => number_format($deleted['contacts'])],
+                ),
+            ],
+        ));
     }
 
     protected function currentTeam()
@@ -69,6 +108,27 @@ new #[Title('Lists')] class extends Component {
     {
         return $this->currentTeam()->contactLists()->drafted()->count();
     }
+
+    /**
+     * How many contacts emptying the drafts would destroy, so the confirmation
+     * can say what is actually at stake rather than just how many lists.
+     */
+    #[Computed]
+    public function draftsContactsCount(): int
+    {
+        return $this->currentTeam()->contacts()
+            ->whereIn('contact_list_id', $this->currentTeam()->contactLists()->drafted()->select('id'))
+            ->count();
+    }
+
+    /**
+     * Whether this user may empty the drafts shelf.
+     */
+    #[Computed]
+    public function canEmptyDrafts(): bool
+    {
+        return Auth::user()->can('deleteLists', $this->currentTeam());
+    }
 }; ?>
 
 <div class="flex h-full w-full flex-1 flex-col gap-6">
@@ -85,17 +145,34 @@ new #[Title('Lists')] class extends Component {
         </flux:modal.trigger>
     </div>
 
-    <flux:button.group>
-        <flux:button size="sm" :variant="$this->showingDrafts() ? 'ghost' : 'filled'" wire:click="showActive" data-test="filter-active">
-            {{ __('Active') }}
-        </flux:button>
-        <flux:button size="sm" :variant="$this->showingDrafts() ? 'filled' : 'ghost'" wire:click="showDrafts" data-test="filter-drafts">
-            {{ __('Drafts') }}
-            @if ($this->draftsCount > 0)
-                <flux:badge size="sm" color="amber" class="ml-2">{{ $this->draftsCount }}</flux:badge>
-            @endif
-        </flux:button>
-    </flux:button.group>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <flux:button.group>
+            <flux:button size="sm" :variant="$this->showingDrafts() ? 'ghost' : 'filled'" wire:click="showActive" data-test="filter-active">
+                {{ __('Active') }}
+            </flux:button>
+            <flux:button size="sm" :variant="$this->showingDrafts() ? 'filled' : 'ghost'" wire:click="showDrafts" data-test="filter-drafts">
+                {{ __('Drafts') }}
+                @if ($this->draftsCount > 0)
+                    <flux:badge size="sm" color="amber" class="ml-2">{{ $this->draftsCount }}</flux:badge>
+                @endif
+            </flux:button>
+        </flux:button.group>
+
+        @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canEmptyDrafts)
+            <flux:modal.trigger name="empty-drafts">
+                <flux:button
+                    size="sm"
+                    variant="danger"
+                    icon="trash"
+                    x-data=""
+                    x-on:click.prevent="$dispatch('open-modal', 'empty-drafts')"
+                    data-test="empty-drafts-button"
+                >
+                    {{ __('Empty drafts') }}
+                </flux:button>
+            </flux:modal.trigger>
+        @endif
+    </div>
 
     <div class="space-y-3">
         @forelse ($this->lists as $list)
@@ -130,6 +207,47 @@ new #[Title('Lists')] class extends Component {
             </flux:card>
         @endforelse
     </div>
+
+    {{-- Rendered only alongside its trigger: an always-present modal would put
+         the confirmation's wording on the page for someone who cannot use it. --}}
+    @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canEmptyDrafts)
+        <flux:modal name="empty-drafts" class="max-w-lg">
+            <div class="space-y-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Empty drafts') }}</flux:heading>
+                    <flux:subheading>
+                        {{ trans_choice(
+                            '{1}:count drafted list and :contacts will be deleted permanently.|[2,*]:count drafted lists and :contacts will be deleted permanently.',
+                            $this->draftsCount,
+                            [
+                                'count' => number_format($this->draftsCount),
+                                'contacts' => trans_choice(
+                                    '{0}the contacts on it|{1}:count contact|[2,*]all :count of their contacts',
+                                    $this->draftsContactsCount,
+                                    ['count' => number_format($this->draftsContactsCount)],
+                                ),
+                            ],
+                        ) }}
+                    </flux:subheading>
+                </div>
+
+                <flux:callout variant="warning" icon="exclamation-triangle">
+                    <flux:callout.text>
+                        {{ __('There is no undo. Past deliveries are kept — they keep the name of the list they were sent from — but the lists and their contacts are gone for good.') }}
+                    </flux:callout.text>
+                </flux:callout>
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button variant="danger" wire:click="emptyDrafts" data-test="empty-drafts-submit">
+                        {{ __('Delete all drafts') }}
+                    </flux:button>
+                </div>
+            </div>
+        </flux:modal>
+    @endif
 
     <flux:modal name="create-list" :show="$errors->isNotEmpty()" focusable class="max-w-lg">
         <form wire:submit="createList" class="space-y-6">

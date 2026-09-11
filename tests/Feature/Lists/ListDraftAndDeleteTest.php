@@ -246,3 +246,99 @@ test('deleting a drafted list keeps its deliveries and snapshots the list name',
         'synced_count' => 1,
     ]);
 });
+
+test('emptying the drafts deletes every drafted list and its contacts', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $drafts = ContactList::factory()->drafted()->count(3)->create(['team_id' => $team->id]);
+    $active = draftTestList($user, ['name' => 'Still Working']);
+
+    foreach ($drafts as $draft) {
+        Contact::factory()->count(2)->create([
+            'team_id' => $team->id,
+            'contact_list_id' => $draft->id,
+        ]);
+    }
+
+    $keptContact = Contact::factory()->create([
+        'team_id' => $team->id,
+        'contact_list_id' => $active->id,
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->call('showDrafts')
+        ->call('emptyDrafts')
+        ->assertHasNoErrors();
+
+    expect($team->contactLists()->drafted()->count())->toBe(0)
+        ->and(Contact::count())->toBe(1)
+        ->and(Contact::whereKey($keptContact->id)->exists())->toBeTrue();
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $active->id]);
+});
+
+test('emptying the drafts leaves another team alone', function () {
+    $user = User::factory()->create();
+    $foreignDraft = ContactList::factory()->drafted()->create();
+
+    ContactList::factory()->drafted()->create(['team_id' => $user->currentTeam->id]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->call('emptyDrafts')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $foreignDraft->id]);
+});
+
+test('emptying the drafts keeps the deliveries they were sent from', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $draft = ContactList::factory()->drafted()->create(['team_id' => $team->id, 'name' => 'Set Aside']);
+
+    $delivery = Delivery::factory()->create([
+        'team_id' => $team->id,
+        'contact_list_id' => $draft->id,
+        'integration_id' => Integration::factory()->create(['team_id' => $team->id])->id,
+        'status' => Delivery::STATUS_COMPLETED,
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')->call('emptyDrafts');
+
+    $this->assertDatabaseHas('deliveries', [
+        'id' => $delivery->id,
+        'contact_list_id' => null,
+        'contact_list_name' => 'Set Aside',
+    ]);
+});
+
+test('emptying an already empty drafts shelf changes nothing', function () {
+    $user = User::factory()->create();
+    $active = draftTestList($user);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->call('emptyDrafts')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $active->id]);
+});
+
+test('the empty drafts button only appears on the drafts shelf', function () {
+    $user = User::factory()->create();
+    ContactList::factory()->drafted()->create(['team_id' => $user->currentTeam->id]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->assertDontSee(__('Empty drafts'))
+        ->call('showDrafts')
+        ->assertSee(__('Empty drafts'));
+});

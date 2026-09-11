@@ -16,7 +16,10 @@ function memberOfTeam(Team $team, TeamRole $role): User
     $team->members()->attach($user, ['role' => $role->value]);
     $user->forceFill(['current_team_id' => $team->id])->save();
 
-    return $user;
+    // Reloaded because the factory leaves the personal team it created cached on
+    // the currentTeam relation, and the switch above only changes the column —
+    // anything reading $user->currentTeam would still get the personal team.
+    return $user->fresh();
 }
 
 test('only owners and admins carry the delete-list permission', function () {
@@ -97,4 +100,38 @@ test('a plain member can still draft and restore a list', function () {
         ->call('restoreList');
 
     expect($list->fresh()->isDraft())->toBeFalse();
+});
+
+test('a plain member cannot empty the drafts', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = memberOfTeam($team, TeamRole::Member);
+
+    $draft = ContactList::factory()->drafted()->create(['team_id' => $team->id]);
+
+    $this->actingAs($member);
+
+    Livewire::test('pages::lists.index')
+        ->call('showDrafts')
+        ->assertDontSee(__('Empty drafts'))
+        ->call('emptyDrafts')
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $draft->id]);
+});
+
+test('an admin can empty the drafts', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $admin = memberOfTeam($team, TeamRole::Admin);
+
+    $draft = ContactList::factory()->drafted()->create(['team_id' => $team->id]);
+
+    $this->actingAs($admin);
+
+    Livewire::test('pages::lists.index')
+        ->call('emptyDrafts')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseMissing('contact_lists', ['id' => $draft->id]);
 });
