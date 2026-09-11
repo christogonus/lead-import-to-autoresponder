@@ -102,6 +102,26 @@ class Team extends Model
     }
 
     /**
+     * Get every contact this team holds, across all of its lists.
+     *
+     * @return HasMany<Contact, $this>
+     */
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(Contact::class);
+    }
+
+    /**
+     * Get the addresses on this team's do-not-contact list.
+     *
+     * @return HasMany<Suppression, $this>
+     */
+    public function suppressions(): HasMany
+    {
+        return $this->hasMany(Suppression::class);
+    }
+
+    /**
      * Get every send this team has made, including those whose list has since
      * been deleted.
      *

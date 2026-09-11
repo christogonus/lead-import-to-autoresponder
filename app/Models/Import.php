@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'total_rows',
     'imported_count',
     'skipped_count',
+    'suppressed_count',
     'failed_count',
     'status',
 ])]

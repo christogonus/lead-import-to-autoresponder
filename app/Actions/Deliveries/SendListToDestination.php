@@ -8,6 +8,7 @@ use App\Models\ContactList;
 use App\Models\Delivery;
 use App\Models\DeliveryContact;
 use App\Models\Integration;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
 use RuntimeException;
@@ -51,7 +52,14 @@ class SendListToDestination
         }
 
         $contacts = $list->contacts()
-            ->whereNotIn('id', $this->contactsAlreadySynced($list, $integration, $remoteId));
+            ->whereNotIn('id', $this->contactsAlreadySynced($list, $integration, $remoteId))
+            // Blocking an address deletes its contacts, so this normally matches
+            // nothing. It is the guard for the gap where it doesn't: a contact
+            // added between the block and this send, or a block landing while
+            // this query runs. A delivery is the last place to catch it.
+            ->whereNotExists(fn (Builder $query) => $query->from('suppressions')
+                ->where('suppressions.team_id', $list->team_id)
+                ->whereColumn('suppressions.email', 'contacts.email'));
 
         $total = $contacts->clone()->count();
 

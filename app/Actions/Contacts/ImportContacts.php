@@ -5,7 +5,9 @@ namespace App\Actions\Contacts;
 use App\Models\Contact;
 use App\Models\ContactList;
 use App\Models\Import;
+use App\Models\Suppression;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use RuntimeException;
 use Throwable;
 
@@ -17,6 +19,11 @@ use Throwable;
  */
 class ImportContacts
 {
+    /**
+     * How many addresses to look up against the do-not-contact list at a time.
+     */
+    private const LOOKUP_CHUNK = 1000;
+
     /**
      * @param  array<int, array{first_name?: ?string, last_name?: ?string, email?: ?string, phone?: ?string, country?: ?string}>  $rows
      *
@@ -67,8 +74,11 @@ class ImportContacts
             ->map(fn (string $email): string => strtolower($email))
             ->flip();
 
+        $blockedEmails = $this->blockedEmails($list, $rows);
+
         $imported = 0;
         $skipped = 0;
+        $suppressed = 0;
         $failed = 0;
         $now = now();
         $pending = [];
@@ -78,6 +88,14 @@ class ImportContacts
 
             if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $failed++;
+
+                continue;
+            }
+
+            // An address on the team's do-not-contact list bounced or asked to
+            // be removed. Importing it again would quietly undo that.
+            if ($blockedEmails->has($email)) {
+                $suppressed++;
 
                 continue;
             }
@@ -125,11 +143,36 @@ class ImportContacts
             // tally rather than silently inflating the imported one.
             'imported_count' => $inserted,
             'skipped_count' => $skipped + ($imported - $inserted),
+            'suppressed_count' => $suppressed,
             'failed_count' => $failed,
             'status' => Import::STATUS_COMPLETED,
         ]);
 
         return $import;
+    }
+
+    /**
+     * The addresses in this batch that the team has blocked, as a lookup set.
+     *
+     * Queried by the batch's own addresses rather than by reading the whole
+     * do-not-contact list: the number of queries then follows the size of the
+     * import, and a team with a long history of bounces does not have to load
+     * every one of them to import ten rows.
+     *
+     * @param  array<int, array{email?: ?string}>  $rows
+     * @return Collection<string, bool>
+     */
+    private function blockedEmails(ContactList $list, array $rows): Collection
+    {
+        return collect($rows)
+            ->map(fn (array $row): string => Suppression::normalize((string) ($row['email'] ?? '')))
+            ->filter()
+            ->unique()
+            ->chunk(self::LOOKUP_CHUNK)
+            ->flatMap(fn (Collection $chunk): Collection => Suppression::query()
+                ->blocking($list->team_id, $chunk)
+                ->pluck('email'))
+            ->flip();
     }
 
     /**

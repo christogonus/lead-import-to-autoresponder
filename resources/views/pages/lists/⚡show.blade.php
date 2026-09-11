@@ -5,7 +5,9 @@ use App\Actions\Contacts\ParseDelimitedContacts;
 use App\Actions\Deliveries\SendListToDestination;
 use App\Actions\Lists\DeleteContactList;
 use App\Actions\Lists\SplitContactList;
+use App\Actions\Suppressions\SuppressEmails;
 use App\Enums\ContactStatus;
+use App\Enums\SuppressionReason;
 use App\Integrations\IntegrationManager;
 use App\Jobs\PushDeliveryContact;
 use App\Models\Contact;
@@ -206,6 +208,12 @@ new #[Title('List')] class extends Component
 
         $result = $import->handle($this->contactList, [$this->manual], 'manual', null, Auth::user());
 
+        if ($result->suppressed_count > 0) {
+            $this->addError('manual.email', __('That address is on your do-not-contact list.'));
+
+            return;
+        }
+
         if ($result->skipped_count > 0) {
             $this->addError('manual.email', __('That email is already on this list.'));
 
@@ -290,11 +298,21 @@ new #[Title('List')] class extends Component
         $this->resetImport();
         $this->dispatch('close-modal', name: 'import-contacts');
 
-        Flux::toast(variant: 'success', text: __(':imported imported, :skipped skipped, :failed failed.', [
+        $summary = __(':imported imported, :skipped skipped, :failed failed.', [
             'imported' => $result->imported_count,
             'skipped' => $result->skipped_count,
             'failed' => $result->failed_count,
-        ]));
+        ]);
+
+        if ($result->suppressed_count > 0) {
+            $summary .= ' '.trans_choice(
+                '{1}:count address was skipped as do-not-contact.|[2,*]:count addresses were skipped as do-not-contact.',
+                $result->suppressed_count,
+                ['count' => number_format($result->suppressed_count)],
+            );
+        }
+
+        Flux::toast(variant: 'success', text: $summary);
     }
 
     public function updatedSendIntegrationId(IntegrationManager $manager): void
@@ -484,6 +502,31 @@ new #[Title('List')] class extends Component
         unset($this->deliveries);
 
         Flux::toast(variant: 'success', text: __('Contact removed.'));
+    }
+
+    /**
+     * Remove this contact everywhere, not just from this list: the address goes
+     * on the team's do-not-contact list, which deletes it from every other list
+     * too and keeps it out of future imports and sends.
+     */
+    public function blockContact(Contact $contact, SuppressEmails $suppressor): void
+    {
+        abort_unless($contact->contact_list_id === $this->contactList->id, 403);
+
+        $result = $suppressor->handle(
+            $this->currentTeam(),
+            [$contact->email],
+            SuppressionReason::Unsubscribed,
+            Auth::user(),
+        );
+
+        unset($this->deliveries, $this->contactsCount);
+
+        Flux::toast(variant: 'success', text: trans_choice(
+            '{1}:email blocked and removed from this list.|[2,*]:email blocked and removed from :count lists.',
+            $result->listsAffected,
+            ['email' => $contact->email, 'count' => $result->listsAffected],
+        ));
     }
 
     public function updatedSearch(): void
@@ -905,7 +948,22 @@ new #[Title('List')] class extends Component
                         <flux:table.cell>{{ $contact->phone ?: '—' }}</flux:table.cell>
                         <flux:table.cell>{{ $contact->country ?: '—' }}</flux:table.cell>
                         <flux:table.cell>
-                            <flux:button variant="ghost" size="xs" icon="trash" wire:click="deleteContact({{ $contact->id }})" wire:confirm="{{ __('Remove this contact?') }}" />
+                            <div class="flex items-center justify-end gap-1">
+                                <flux:tooltip :content="__('Block everywhere')">
+                                    <flux:button
+                                        variant="ghost"
+                                        size="xs"
+                                        icon="no-symbol"
+                                        wire:click="blockContact({{ $contact->id }})"
+                                        wire:confirm="{{ __('Block this address? It is removed from every list on this team and kept out of future imports and sends.') }}"
+                                        data-test="block-contact-button"
+                                    />
+                                </flux:tooltip>
+
+                                <flux:tooltip :content="__('Remove from this list')">
+                                    <flux:button variant="ghost" size="xs" icon="trash" wire:click="deleteContact({{ $contact->id }})" wire:confirm="{{ __('Remove this contact?') }}" />
+                                </flux:tooltip>
+                            </div>
                         </flux:table.cell>
                     </flux:table.row>
                 @empty

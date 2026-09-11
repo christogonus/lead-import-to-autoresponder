@@ -26,6 +26,10 @@
                         {{ __('Deliveries') }}
                     </flux:sidebar.item>
 
+                    <flux:sidebar.item icon="no-symbol" :href="route('suppressions.index')" :current="request()->routeIs('suppressions.*')" wire:navigate>
+                        {{ __('Do not contact') }}
+                    </flux:sidebar.item>
+
                     <flux:sidebar.item icon="puzzle-piece" :href="route('integrations.index')" :current="request()->routeIs('integrations.*')" wire:navigate>
                         {{ __('Integrations') }}
                     </flux:sidebar.item>

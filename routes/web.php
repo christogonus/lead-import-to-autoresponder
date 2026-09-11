@@ -18,6 +18,8 @@ Route::prefix('{current_team}')
         Route::livewire('lists/{contactList}', 'pages::lists.show')->name('lists.show');
 
         Route::livewire('deliveries', 'pages::deliveries.index')->name('deliveries.index');
+
+        Route::livewire('do-not-contact', 'pages::suppressions.index')->name('suppressions.index');
     });
 
 Route::middleware(['auth'])->group(function () {
