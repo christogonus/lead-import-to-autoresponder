@@ -8,6 +8,7 @@ use App\Integrations\Drivers\BirdSendProvider;
 use App\Integrations\Drivers\GetResponseProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\MailchimpProvider;
+use App\Integrations\Drivers\SenderNetProvider;
 use App\Integrations\Drivers\SystemeIoProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
 use App\Integrations\OAuth\OAuthConfig;
@@ -21,6 +22,7 @@ enum IntegrationProvider: string
     case AWeber = 'aweber';
     case GoToWebinar = 'gotowebinar';
     case ZohoCampaigns = 'zoho_campaigns';
+    case SenderNet = 'sender_net';
 
     /**
      * Get the human-readable label for the provider.
@@ -35,6 +37,7 @@ enum IntegrationProvider: string
             self::AWeber => 'AWeber',
             self::GoToWebinar => 'GoToWebinar',
             self::ZohoCampaigns => 'Zoho Campaigns',
+            self::SenderNet => 'Sender.net',
         };
     }
 
@@ -51,6 +54,7 @@ enum IntegrationProvider: string
             self::AWeber => 'list',
             self::GoToWebinar => 'webinar',
             self::ZohoCampaigns => 'mailing list',
+            self::SenderNet => 'group',
         };
     }
 
@@ -69,6 +73,7 @@ enum IntegrationProvider: string
             self::AWeber => AWeberProvider::class,
             self::GoToWebinar => GoToWebinarProvider::class,
             self::ZohoCampaigns => ZohoCampaignsProvider::class,
+            self::SenderNet => SenderNetProvider::class,
         };
     }
 
@@ -179,6 +184,14 @@ enum IntegrationProvider: string
                     'label' => 'Access token',
                     'type' => 'password',
                     'hint' => 'Create a personal access token in BirdSend under Settings → API.',
+                ],
+            ],
+            self::SenderNet => [
+                [
+                    'key' => 'api_key',
+                    'label' => 'API access token',
+                    'type' => 'password',
+                    'hint' => 'Create one in Sender under Settings → API access tokens (app.sender.net/settings/tokens).',
                 ],
             ],
             // AWeber and GoToWebinar connect via OAuth, so there are no manual

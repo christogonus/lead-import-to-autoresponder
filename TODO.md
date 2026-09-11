@@ -76,6 +76,14 @@ Outstanding work and known limitations, most actionable first.
 - [ ] **AWeber/Mailchimp field mapping** only covers name + phone/country (mapped to
   existing custom fields where present). Revisit if more fields are needed.
 
+- [ ] **Sender.net drops local-format phone numbers.** Sender rejects the whole request
+  unless a number carries a country code (`+370`/`00370`), so the driver sends the phone
+  only when it already has one and silently omits it otherwise — the subscriber still
+  lands, without a number. Normalising numbers per contact country would fix it. Country
+  is never sent (Sender has no standard field for it) and custom `fields` are keyed by
+  each account's own field ids, so they are not mapped either. Sender publishes no
+  request-per-minute figure, so nothing paces it beyond the generic 429 retry.
+
 ## Done (recent)
 
 - [x] **GoToWebinar registrant names** now derive from the email's local part
@@ -93,8 +101,8 @@ Outstanding work and known limitations, most actionable first.
   handles Zoho's `Zoho-oauthtoken` auth scheme, its errors-inside-HTTP-200 convention, and
   its `contactinfo` JSON-string parameter. Region is set by `ZOHO_CAMPAIGNS_REGION`, with
   each connection pinned to the `api_domain` it was authorized against.
-- [x] Providers: GetResponse, Systeme.io, Mailchimp, BirdSend (API key); AWeber,
-  GoToWebinar, Zoho Campaigns (OAuth2, with token refresh).
+- [x] Providers: GetResponse, Systeme.io, Mailchimp, BirdSend, Sender.net (API key);
+  AWeber, GoToWebinar, Zoho Campaigns (OAuth2, with token refresh).
 - [x] Decoupled import from sending — lists are contact groups; a list can be **sent to
   many destinations** independently, each tracked per-contact (dedup per destination).
 - [x] Fixed large-CSV import not advancing past the mapping step (file now stored on disk

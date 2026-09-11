@@ -135,3 +135,40 @@ test('a user cannot disconnect another teams integration', function () {
         ->call('disconnect', $other->id)
         ->assertForbidden();
 });
+
+test('a sender.net integration can be connected through the same flow', function () {
+    Http::fake(['api.sender.net/v2/groups*' => Http::response(['data' => [], 'meta' => ['last_page' => 1]], 200)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'sender_net')
+        ->set('name', 'My Sender')
+        ->set('credentials.api_key', 'valid-token')
+        ->call('connect')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('integrations', [
+        'team_id' => $user->currentTeam->id,
+        'name' => 'My Sender',
+        'provider' => 'sender_net',
+        'status' => 'connected',
+    ]);
+});
+
+test('sender.net credentials that the provider rejects are not saved', function () {
+    Http::fake(['api.sender.net/v2/groups*' => Http::response(['message' => 'Unauthenticated.'], 401)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'sender_net')
+        ->set('name', 'My Sender')
+        ->set('credentials.api_key', 'bad-token')
+        ->call('connect')
+        ->assertHasErrors('credentials');
+
+    $this->assertDatabaseCount('integrations', 0);
+});
