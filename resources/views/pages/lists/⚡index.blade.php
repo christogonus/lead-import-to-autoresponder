@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Lists\DeleteDraftedLists;
+use App\Actions\Lists\MergeContactLists;
 use App\Models\ContactList;
 use Flux\Flux;
 use Illuminate\Support\Collection;
@@ -20,6 +21,12 @@ new #[Title('Lists')] class extends Component {
     #[Url(except: 'active')]
     public string $filter = 'active';
 
+    /** Ids of the lists chosen for a merge. */
+    public array $mergeSelection = [];
+
+    /** Name for the list a merge would create. */
+    public string $mergeName = '';
+
     public function createList(): void
     {
         $validated = $this->validate();
@@ -31,6 +38,56 @@ new #[Title('Lists')] class extends Component {
         Flux::toast(variant: 'success', text: __('List created.'));
 
         $this->redirectRoute('lists.show', ['contactList' => $list->id], navigate: true);
+    }
+
+    /**
+     * Combine the chosen lists into one new list holding a single contact per
+     * email address. The chosen lists themselves are left alone.
+     */
+    public function mergeLists(MergeContactLists $merger): void
+    {
+        $validated = $this->validate([
+            'mergeName' => ['required', 'string', 'max:255'],
+            'mergeSelection' => ['array', 'min:'.MergeContactLists::MINIMUM_SOURCES],
+            'mergeSelection.*' => ['integer'],
+        ], [
+            'mergeSelection.min' => __('Choose at least :count lists to merge.', ['count' => MergeContactLists::MINIMUM_SOURCES]),
+        ], [
+            'mergeName' => __('list name'),
+        ]);
+
+        // Re-read the chosen lists through the team's own active lists, so a
+        // tampered-with checkbox value cannot pull in another team's list or one
+        // that has since been set aside.
+        $sources = $this->currentTeam()->contactLists()
+            ->active()
+            ->whereIn('id', $validated['mergeSelection'])
+            ->get();
+
+        if ($sources->count() < MergeContactLists::MINIMUM_SOURCES) {
+            $this->addError('mergeSelection', __('Some of those lists are no longer available to merge.'));
+
+            return;
+        }
+
+        $merged = $merger->handle($sources, $validated['mergeName']);
+
+        Flux::toast(variant: 'success', text: trans_choice(
+            '{0}Merged :lists — no contacts to copy.|{1}Merged :lists into :count contact.|[2,*]Merged :lists into :count unique contacts.',
+            $merged['merged'],
+            [
+                'count' => number_format($merged['merged']),
+                'lists' => trans_choice('{1}:count list|[2,*]:count lists', $sources->count(), ['count' => $sources->count()]),
+            ],
+        ).($merged['duplicates'] > 0 ? ' '.trans_choice(
+            '{1}:count duplicate was left out.|[2,*]:count duplicates were left out.',
+            $merged['duplicates'],
+            ['count' => number_format($merged['duplicates'])],
+        ) : ''));
+
+        $this->reset('mergeSelection', 'mergeName');
+
+        $this->redirectRoute('lists.show', ['contactList' => $merged['list']->id], navigate: true);
     }
 
     /**
@@ -103,6 +160,29 @@ new #[Title('Lists')] class extends Component {
             ->get();
     }
 
+    /**
+     * What merging the current selection would produce, so the outcome — above
+     * all how many duplicates get dropped — is visible before committing.
+     *
+     * @return array{unique: int, duplicates: int}|null
+     */
+    #[Computed]
+    public function mergeEstimate(): ?array
+    {
+        $ids = array_map('intval', $this->mergeSelection);
+
+        if (count($ids) < MergeContactLists::MINIMUM_SOURCES) {
+            return null;
+        }
+
+        $contacts = fn () => $this->currentTeam()->contacts()->whereIn('contact_list_id', $ids);
+
+        $total = $contacts()->count();
+        $unique = $contacts()->distinct()->count('email');
+
+        return ['unique' => $unique, 'duplicates' => $total - $unique];
+    }
+
     #[Computed]
     public function draftsCount(): int
     {
@@ -157,6 +237,21 @@ new #[Title('Lists')] class extends Component {
                 @endif
             </flux:button>
         </flux:button.group>
+
+        @if (! $this->showingDrafts() && $this->lists->count() >= 2)
+            <flux:modal.trigger name="merge-lists">
+                <flux:button
+                    size="sm"
+                    variant="subtle"
+                    icon="arrows-pointing-in"
+                    x-data=""
+                    x-on:click.prevent="$dispatch('open-modal', 'merge-lists')"
+                    data-test="merge-button"
+                >
+                    {{ __('Merge lists') }}
+                </flux:button>
+            </flux:modal.trigger>
+        @endif
 
         @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canEmptyDrafts)
             <flux:modal.trigger name="empty-drafts">
@@ -249,7 +344,62 @@ new #[Title('Lists')] class extends Component {
         </flux:modal>
     @endif
 
-    <flux:modal name="create-list" :show="$errors->isNotEmpty()" focusable class="max-w-lg">
+    {{-- Merge lists modal --}}
+    @if (! $this->showingDrafts() && $this->lists->count() >= 2)
+        <flux:modal name="merge-lists" :show="$errors->hasAny(['mergeName', 'mergeSelection'])" focusable class="max-w-lg">
+            <form wire:submit="mergeLists" class="space-y-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Merge lists') }}</flux:heading>
+                    <flux:subheading>
+                        {{ __('Pick the lists to combine. The new list keeps one contact per email address; the lists you pick are left exactly as they are.') }}
+                    </flux:subheading>
+                </div>
+
+                <flux:input wire:model="mergeName" :label="__('New list name')" :placeholder="__('e.g. All Webinar Leads')" data-test="merge-name" />
+
+                <flux:checkbox.group wire:model.live="mergeSelection" :label="__('Lists to merge')" class="max-h-64 overflow-y-auto">
+                    @foreach ($this->lists as $list)
+                        <flux:checkbox
+                            :value="(string) $list->id"
+                            :label="$list->name"
+                            :description="trans_choice('{0}No contacts|{1}:count contact|[2,*]:count contacts', $list->contacts_count, ['count' => number_format($list->contacts_count)])"
+                            data-test="merge-option"
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+
+                <flux:error name="mergeSelection" />
+
+                @if ($this->mergeEstimate)
+                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400" data-test="merge-estimate">
+                        {{ trans_choice(
+                            '{0}Nothing to copy — the chosen lists are empty.|{1}The new list would hold :count contact.|[2,*]The new list would hold :count unique contacts.',
+                            $this->mergeEstimate['unique'],
+                            ['count' => number_format($this->mergeEstimate['unique'])],
+                        ) }}
+                        @if ($this->mergeEstimate['duplicates'] > 0)
+                            {{ trans_choice(
+                                '{1}:count address appears on more than one list and is copied once.|[2,*]:count addresses appear on more than one list and are copied once each.',
+                                $this->mergeEstimate['duplicates'],
+                                ['count' => number_format($this->mergeEstimate['duplicates'])],
+                            ) }}
+                        @endif
+                    </flux:text>
+                @endif
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button variant="primary" type="submit" data-test="merge-submit">{{ __('Merge lists') }}</flux:button>
+                </div>
+            </form>
+        </flux:modal>
+    @endif
+
+    {{-- Opened by its own field's errors only: the page now has a second form,
+         and a failed merge must not pop the create dialog open as well. --}}
+    <flux:modal name="create-list" :show="$errors->has('name')" focusable class="max-w-lg">
         <form wire:submit="createList" class="space-y-6">
             <div>
                 <flux:heading size="lg">{{ __('Create a list') }}</flux:heading>
