@@ -4,6 +4,7 @@ use App\Actions\Contacts\ImportContacts;
 use App\Actions\Contacts\ParseDelimitedContacts;
 use App\Actions\Deliveries\SendListToDestination;
 use App\Actions\Lists\DeleteContactList;
+use App\Actions\Lists\RemoveListOverlap;
 use App\Actions\Lists\SplitContactList;
 use App\Actions\Suppressions\SuppressEmails;
 use App\Enums\ContactStatus;
@@ -99,6 +100,9 @@ new #[Title('List')] class extends Component
 
     /** Typed back by the user to confirm a permanent delete. */
     public string $deleteName = '';
+
+    /** The other list whose addresses are removed from this one. */
+    public ?int $overlapListId = null;
 
     public function mount(ContactList $contactList): void
     {
@@ -402,6 +406,46 @@ new #[Title('List')] class extends Component
         $this->redirectRoute('lists.index', navigate: true);
     }
 
+    /**
+     * Remove from this list every contact whose email is also on the chosen
+     * list. The chosen list is left as it is.
+     */
+    public function removeOverlap(RemoveListOverlap $remover): void
+    {
+        $this->abortIfDrafted();
+
+        $validated = $this->validate(
+            ['overlapListId' => ['required', 'integer']],
+            ['overlapListId.required' => __('Choose the list to compare against.')],
+        );
+
+        // Looked up through the team's own lists, so a tampered-with value cannot
+        // compare against another team's list.
+        $reference = $this->currentTeam()->contactLists()
+            ->whereKeyNot($this->contactList->id)
+            ->find($validated['overlapListId']);
+
+        if ($reference === null) {
+            $this->addError('overlapListId', __('That list is no longer available.'));
+
+            return;
+        }
+
+        $removed = $remover->handle($this->contactList, $reference);
+
+        $this->reset('overlapListId');
+        $this->dispatch('close-modal', name: 'remove-overlap');
+
+        unset($this->contactsCount, $this->contacts, $this->deliveries, $this->overlapCount);
+        $this->resetPage();
+
+        Flux::toast(variant: $removed > 0 ? 'success' : 'warning', text: trans_choice(
+            '{0}No contacts on this list are on ":list".|{1}Removed :count contact that is also on ":list".|[2,*]Removed :count contacts that are also on ":list".',
+            $removed,
+            ['count' => number_format($removed), 'list' => $reference->name],
+        ));
+    }
+
     public function cancelDelivery(Delivery $delivery): void
     {
         abort_unless($delivery->contact_list_id === $this->contactList->id, 403);
@@ -677,6 +721,38 @@ new #[Title('List')] class extends Component
     }
 
     /**
+     * The team's other lists this one can be compared against.
+     *
+     * @return Collection<int, ContactList>
+     */
+    #[Computed]
+    public function overlapCandidates(): Collection
+    {
+        return $this->currentTeam()->contactLists()
+            ->whereKeyNot($this->contactList->id)
+            ->orderBy('name')
+            ->get(['id', 'team_id', 'name', 'drafted_at']);
+    }
+
+    /**
+     * How many contacts removing the overlap with the chosen list would delete,
+     * so the outcome is visible before anything is gone.
+     */
+    #[Computed]
+    public function overlapCount(): ?int
+    {
+        $reference = $this->overlapListId
+            ? $this->overlapCandidates->firstWhere('id', $this->overlapListId)
+            : null;
+
+        if ($reference === null) {
+            return null;
+        }
+
+        return app(RemoveListOverlap::class)->count($this->contactList, $reference);
+    }
+
+    /**
      * @return Collection<int, Integration>
      */
     #[Computed]
@@ -795,6 +871,10 @@ new #[Title('List')] class extends Component
                             </flux:menu.item>
                         @endcan
                     @else
+                        <flux:menu.item icon="funnel" x-data="" x-on:click="$dispatch('open-modal', 'remove-overlap')" data-test="remove-overlap-button">
+                            {{ __('Remove overlap') }}
+                        </flux:menu.item>
+
                         <flux:menu.item icon="archive-box" wire:click="draftList" data-test="draft-list">
                             {{ __('Move to drafts') }}
                         </flux:menu.item>
@@ -1012,6 +1092,55 @@ new #[Title('List')] class extends Component
         </form>
     </flux:modal>
     @endcan
+
+    {{-- Remove overlap modal --}}
+    @unless ($contactList->isDraft())
+    <flux:modal name="remove-overlap" :show="$errors->has('overlapListId')" focusable class="max-w-lg">
+        <form wire:submit="removeOverlap" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Remove overlap with another list') }}</flux:heading>
+                <flux:subheading>
+                    {{ __('Every contact on ":name" whose email is also on the list you pick is removed from ":name". The list you pick is left as it is.', ['name' => $contactList->name]) }}
+                </flux:subheading>
+            </div>
+
+            @if ($this->overlapCandidates->isEmpty())
+                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
+                    {{ __('There are no other lists to compare against.') }}
+                </flux:text>
+            @else
+                <flux:select wire:model.live="overlapListId" :label="__('Compare against')" :placeholder="__('Select a list')" data-test="overlap-list">
+                    @foreach ($this->overlapCandidates as $candidate)
+                        <flux:select.option value="{{ $candidate->id }}" wire:key="overlap-candidate-{{ $candidate->id }}">
+                            {{ $candidate->isDraft() ? __(':name (draft)', ['name' => $candidate->name]) : $candidate->name }}
+                        </flux:select.option>
+                    @endforeach
+                </flux:select>
+
+                @if ($this->overlapCount !== null)
+                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400" data-test="overlap-estimate">
+                        {{ trans_choice(
+                            '{0}No contacts on this list are on that one — nothing to remove.|{1}:count contact on this list is also on that one and will be removed.|[2,*]:count contacts on this list are also on that one and will be removed.',
+                            $this->overlapCount,
+                            ['count' => number_format($this->overlapCount)],
+                        ) }}
+                    </flux:text>
+                @endif
+            @endif
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button variant="danger" type="submit" :disabled="! $this->overlapCount" data-test="remove-overlap-submit">
+                    {{ $this->overlapCount
+                        ? trans_choice('{1}Remove :count contact|[2,*]Remove :count contacts', $this->overlapCount, ['count' => number_format($this->overlapCount)])
+                        : __('Remove contacts') }}
+                </flux:button>
+            </div>
+        </form>
+    </flux:modal>
+    @endunless
 
     {{-- Send to destination modal --}}
     <flux:modal name="send-list" :show="$errors->has('sendIntegrationId') || $errors->has('sendRemoteId')" focusable class="max-w-lg">
