@@ -44,7 +44,7 @@ new class extends Component {
             ->notify(new TeamInvitationNotification($invitation));
 
         $this->reset('inviteEmail', 'inviteRole');
-        $this->dispatch('close-modal', name: 'invite-member');
+        Flux::modal('invite-member')->close();
 
         Flux::toast(variant: 'success', text: __('Invitation sent.'));
 

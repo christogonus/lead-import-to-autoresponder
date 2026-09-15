@@ -46,7 +46,7 @@ new class extends Component {
             $user->switchTeam($user->personalTeam());
         }
 
-        $this->dispatch('close-modal', name: $this->modalName);
+        Flux::modal($this->modalName)->close();
 
         Flux::toast(variant: 'success', text: __('Member removed.'));
 

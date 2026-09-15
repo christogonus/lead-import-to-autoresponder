@@ -43,11 +43,27 @@ test('removing the overlap deletes this list\'s contacts that are also on the ot
         ->set('overlapListId', $listA->id)
         ->assertSet('overlapCount', 2)
         ->call('removeOverlap')
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertDispatched('modal-close', name: 'remove-overlap');
 
     expect($listB->contacts()->pluck('email')->all())->toBe(['d@example.com'])
         ->and($listA->contacts()->orderBy('email')->pluck('email')->all())
         ->toBe(['a@example.com', 'b@example.com', 'c@example.com']);
+});
+
+test('the overlap dialog offers the team\'s other lists to compare against', function () {
+    $user = User::factory()->create();
+    $listA = overlapTestList($user, 'List A', ['a@example.com']);
+    $listB = overlapTestList($user, 'List B', ['a@example.com']);
+
+    $this->actingAs($user);
+
+    // The menu item has to open the dialog through Flux's own trigger — Flux
+    // listens for "modal-show", and a bare "open-modal" event opens nothing.
+    Livewire::test('pages::lists.show', ['contactList' => $listB])
+        ->assertSeeHtml("\$dispatch('modal-show', { name: 'remove-overlap' })")
+        ->assertSeeHtml('value="'.$listA->id.'"')
+        ->assertSee('List A');
 });
 
 test('removing the overlap can compare against a drafted list', function () {

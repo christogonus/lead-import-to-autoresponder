@@ -105,7 +105,7 @@ new #[Title('Lists')] class extends Component {
 
         $deleted = $deleter->handle($this->currentTeam());
 
-        $this->dispatch('close-modal', name: 'empty-drafts');
+        Flux::modal('empty-drafts')->close();
 
         // Counts and rows are computed per request, so they are recalculated on
         // the response this call renders — only the cached values need clearing.
@@ -153,7 +153,7 @@ new #[Title('Lists')] class extends Component {
 
         $deleted = $deleter->handle($this->currentTeam(), $validated['deletePattern']);
 
-        $this->dispatch('close-modal', name: 'delete-by-name');
+        Flux::modal('delete-by-name')->close();
         $this->reset('deletePattern');
 
         unset($this->lists, $this->draftsCount, $this->draftsContactsCount, $this->patternMatches);
@@ -298,7 +298,7 @@ new #[Title('Lists')] class extends Component {
         </div>
 
         <flux:modal.trigger name="create-list">
-            <flux:button variant="primary" icon="plus" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-list')" data-test="create-list-button">
+            <flux:button variant="primary" icon="plus" data-test="create-list-button">
                 {{ __('New list') }}
             </flux:button>
         </flux:modal.trigger>
@@ -323,8 +323,6 @@ new #[Title('Lists')] class extends Component {
                     size="sm"
                     variant="subtle"
                     icon="arrows-pointing-in"
-                    x-data=""
-                    x-on:click.prevent="$dispatch('open-modal', 'merge-lists')"
                     data-test="merge-button"
                 >
                     {{ __('Merge lists') }}
@@ -339,8 +337,6 @@ new #[Title('Lists')] class extends Component {
                         size="sm"
                         variant="subtle"
                         icon="trash"
-                        x-data=""
-                        x-on:click.prevent="$dispatch('open-modal', 'delete-by-name')"
                         data-test="delete-by-name-button"
                     >
                         {{ __('Delete by name') }}
@@ -354,8 +350,6 @@ new #[Title('Lists')] class extends Component {
                         size="sm"
                         variant="danger"
                         icon="trash"
-                        x-data=""
-                        x-on:click.prevent="$dispatch('open-modal', 'empty-drafts')"
                         data-test="empty-drafts-button"
                     >
                         {{ __('Empty drafts') }}

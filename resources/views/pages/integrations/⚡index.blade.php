@@ -65,7 +65,7 @@ new #[Title('Integrations')] class extends Component {
             'last_verified_at' => now(),
         ]);
 
-        $this->dispatch('close-modal', name: 'connect-integration');
+        Flux::modal('connect-integration')->close();
         $this->reset('name', 'credentials');
 
         Flux::toast(variant: 'success', text: __('Integration connected.'));
@@ -154,7 +154,7 @@ new #[Title('Integrations')] class extends Component {
         </div>
 
         <flux:modal.trigger name="connect-integration">
-            <flux:button variant="primary" icon="plus" x-data="" x-on:click.prevent="$dispatch('open-modal', 'connect-integration')" data-test="connect-integration-button">
+            <flux:button variant="primary" icon="plus" data-test="connect-integration-button">
                 {{ __('Connect') }}
             </flux:button>
         </flux:modal.trigger>

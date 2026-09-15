@@ -17,7 +17,7 @@ new class extends Component {
 
         $team = $createTeam->handle(Auth::user(), $validated['teamName']);
 
-        $this->dispatch('close-modal', name: 'create-team-switcher');
+        Flux::modal('create-team-switcher')->close();
 
         $this->reset('teamName');
 

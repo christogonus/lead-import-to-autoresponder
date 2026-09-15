@@ -39,7 +39,7 @@ new class extends Component {
 
         $invitation->delete();
 
-        $this->dispatch('close-modal', name: $this->modalName);
+        Flux::modal($this->modalName)->close();
 
         Flux::toast(variant: 'success', text: __('Invitation cancelled.'));
 

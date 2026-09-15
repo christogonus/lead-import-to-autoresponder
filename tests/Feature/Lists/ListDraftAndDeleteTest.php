@@ -354,7 +354,8 @@ test('deleting by name removes every matching list on either shelf with its cont
         ->assertSet('patternMatches.lists', 2)
         ->assertSet('patternMatches.contacts', 3)
         ->call('deleteListsByName')
-        ->assertHasNoErrors();
+        ->assertHasNoErrors()
+        ->assertDispatched('modal-close', name: 'delete-by-name');
 
     $this->assertDatabaseMissing('contact_lists', ['id' => $activeMatch->id]);
     $this->assertDatabaseMissing('contact_lists', ['id' => $draftedMatch->id]);

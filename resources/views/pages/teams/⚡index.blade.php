@@ -21,7 +21,7 @@ new #[Title('Teams')] class extends Component {
 
         $team = $createTeam->handle(Auth::user(), $validated['name']);
 
-        $this->dispatch('close-modal', name: 'create-team');
+        Flux::modal('create-team')->close();
 
         $this->reset('name');
 
@@ -48,7 +48,7 @@ new #[Title('Teams')] class extends Component {
     <x-pages::settings.layout :heading="__('Teams')" :subheading="__('Manage your teams and team memberships')">
         <div class="flex items-center justify-end">
             <flux:modal.trigger name="create-team">
-                <flux:button variant="primary" icon="plus" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-team')" data-test="teams-new-team-button">
+                <flux:button variant="primary" icon="plus" data-test="teams-new-team-button">
                     {{ __('New team') }}
                 </flux:button>
             </flux:modal.trigger>

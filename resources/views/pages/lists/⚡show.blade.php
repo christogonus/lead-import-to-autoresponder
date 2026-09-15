@@ -225,7 +225,7 @@ new #[Title('List')] class extends Component
         }
 
         $this->reset('manual');
-        $this->dispatch('close-modal', name: 'add-contact');
+        Flux::modal('add-contact')->close();
         Flux::toast(variant: 'success', text: __('Contact added.'));
     }
 
@@ -300,7 +300,7 @@ new #[Title('List')] class extends Component
         );
 
         $this->resetImport();
-        $this->dispatch('close-modal', name: 'import-contacts');
+        Flux::modal('import-contacts')->close();
 
         $summary = __(':imported imported, :skipped skipped, :failed failed.', [
             'imported' => $result->imported_count,
@@ -361,7 +361,7 @@ new #[Title('List')] class extends Component
         );
 
         $this->reset('sendIntegrationId', 'sendRemoteId', 'sendRemoteLists', 'sendRemoteListsError', 'sendContactsPerHour');
-        $this->dispatch('close-modal', name: 'send-list');
+        Flux::modal('send-list')->close();
 
         if ($delivery === null) {
             Flux::toast(variant: 'warning', text: __('Every contact is already synced to that destination.'));
@@ -399,7 +399,7 @@ new #[Title('List')] class extends Component
         $splits = $splitter->handle($this->contactList, (int) $this->splitSize);
 
         $this->reset('splitSize');
-        $this->dispatch('close-modal', name: 'split-list');
+        Flux::modal('split-list')->close();
 
         Flux::toast(variant: 'success', text: trans_choice('{1}Created :count list.|[2,*]Created :count lists.', $splits->count(), ['count' => $splits->count()]));
 
@@ -434,7 +434,7 @@ new #[Title('List')] class extends Component
         $removed = $remover->handle($this->contactList, $reference);
 
         $this->reset('overlapListId');
-        $this->dispatch('close-modal', name: 'remove-overlap');
+        Flux::modal('remove-overlap')->close();
 
         unset($this->contactsCount, $this->contacts, $this->deliveries, $this->overlapCount);
         $this->resetPage();
@@ -830,25 +830,25 @@ new #[Title('List')] class extends Component
                 </flux:button>
             @else
                 <flux:modal.trigger name="add-contact">
-                    <flux:button variant="subtle" icon="user-plus" x-data="" x-on:click.prevent="$dispatch('open-modal', 'add-contact')" data-test="add-contact-button">
+                    <flux:button variant="subtle" icon="user-plus" data-test="add-contact-button">
                         {{ __('Add contact') }}
                     </flux:button>
                 </flux:modal.trigger>
 
                 <flux:modal.trigger name="import-contacts">
-                    <flux:button variant="subtle" icon="arrow-up-tray" x-data="" x-on:click.prevent="$dispatch('open-modal', 'import-contacts')" data-test="import-button">
+                    <flux:button variant="subtle" icon="arrow-up-tray" data-test="import-button">
                         {{ __('Import') }}
                     </flux:button>
                 </flux:modal.trigger>
 
                 <flux:modal.trigger name="split-list">
-                    <flux:button variant="subtle" icon="square-2-stack" x-data="" x-on:click.prevent="$dispatch('open-modal', 'split-list')" data-test="split-button" :disabled="$this->contactsCount < 2">
+                    <flux:button variant="subtle" icon="square-2-stack" data-test="split-button" :disabled="$this->contactsCount < 2">
                         {{ __('Split') }}
                     </flux:button>
                 </flux:modal.trigger>
 
                 <flux:modal.trigger name="send-list">
-                    <flux:button variant="primary" icon="paper-airplane" x-data="" x-on:click.prevent="$dispatch('open-modal', 'send-list')" data-test="send-button" :disabled="$this->contactsCount === 0">
+                    <flux:button variant="primary" icon="paper-airplane" data-test="send-button" :disabled="$this->contactsCount === 0">
                         {{ __('Send to destination') }}
                     </flux:button>
                 </flux:modal.trigger>
@@ -866,14 +866,18 @@ new #[Title('List')] class extends Component
                         @can('delete', $contactList)
                             <flux:menu.separator />
 
-                            <flux:menu.item variant="danger" icon="trash" x-data="" x-on:click="$dispatch('open-modal', 'delete-list')" data-test="delete-list-button">
-                                {{ __('Delete permanently') }}
-                            </flux:menu.item>
+                            <flux:modal.trigger name="delete-list">
+                                <flux:menu.item variant="danger" icon="trash" data-test="delete-list-button">
+                                    {{ __('Delete permanently') }}
+                                </flux:menu.item>
+                            </flux:modal.trigger>
                         @endcan
                     @else
-                        <flux:menu.item icon="funnel" x-data="" x-on:click="$dispatch('open-modal', 'remove-overlap')" data-test="remove-overlap-button">
-                            {{ __('Remove overlap') }}
-                        </flux:menu.item>
+                        <flux:modal.trigger name="remove-overlap">
+                            <flux:menu.item icon="funnel" data-test="remove-overlap-button">
+                                {{ __('Remove overlap') }}
+                            </flux:menu.item>
+                        </flux:modal.trigger>
 
                         <flux:menu.item icon="archive-box" wire:click="draftList" data-test="draft-list">
                             {{ __('Move to drafts') }}
@@ -1111,7 +1115,7 @@ new #[Title('List')] class extends Component
             @else
                 <flux:select wire:model.live="overlapListId" :label="__('Compare against')" :placeholder="__('Select a list')" data-test="overlap-list">
                     @foreach ($this->overlapCandidates as $candidate)
-                        <flux:select.option value="{{ $candidate->id }}" wire:key="overlap-candidate-{{ $candidate->id }}">
+                        <flux:select.option value="{{ $candidate->id }}">
                             {{ $candidate->isDraft() ? __(':name (draft)', ['name' => $candidate->name]) : $candidate->name }}
                         </flux:select.option>
                     @endforeach
