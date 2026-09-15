@@ -120,6 +120,24 @@ test('a plain member cannot empty the drafts', function () {
     $this->assertDatabaseHas('contact_lists', ['id' => $draft->id]);
 });
 
+test('a plain member cannot delete lists by name', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = memberOfTeam($team, TeamRole::Member);
+
+    $list = ContactList::factory()->create(['team_id' => $team->id, 'name' => 'Split 1']);
+
+    $this->actingAs($member);
+
+    Livewire::test('pages::lists.index')
+        ->assertDontSee(__('Delete by name'))
+        ->set('deletePattern', 'Split *')
+        ->call('deleteListsByName')
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $list->id]);
+});
+
 test('an admin can empty the drafts', function () {
     $owner = User::factory()->create();
     $team = $owner->currentTeam;

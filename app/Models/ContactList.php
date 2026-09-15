@@ -76,6 +76,31 @@ class ContactList extends Model
     }
 
     /**
+     * Scope a query to the lists with no send or import still running — the
+     * query form of hasWorkInProgress().
+     */
+    #[Scope]
+    protected function idle(Builder $query): void
+    {
+        $query->whereDoesntHave('deliveries', fn (Builder $deliveries) => $deliveries->where('status', Delivery::STATUS_PROCESSING))
+            ->whereDoesntHave('imports', fn (Builder $imports) => $imports->running());
+    }
+
+    /**
+     * Scope a query to the lists whose name matches a pattern, where "*" stands
+     * for any run of characters and everything else is taken literally.
+     */
+    #[Scope]
+    protected function nameMatches(Builder $query, string $pattern): void
+    {
+        // "!" rather than a backslash as the escape character: a backslash in
+        // the ESCAPE clause is read differently by MySQL and SQLite.
+        $like = str_replace(['!', '%', '_', '*'], ['!!', '!%', '!_', '%'], trim($pattern));
+
+        $query->whereRaw("{$query->qualifyColumn('name')} like ? escape '!'", [$like]);
+    }
+
+    /**
      * Whether this list has been set aside as a draft.
      */
     public function isDraft(): bool

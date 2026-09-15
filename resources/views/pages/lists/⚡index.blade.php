@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Lists\DeleteDraftedLists;
+use App\Actions\Lists\DeleteListsByName;
 use App\Actions\Lists\MergeContactLists;
 use App\Models\ContactList;
 use Flux\Flux;
@@ -26,6 +27,9 @@ new #[Title('Lists')] class extends Component {
 
     /** Name for the list a merge would create. */
     public string $mergeName = '';
+
+    /** Name pattern picking the lists to delete in bulk, with "*" as a wildcard. */
+    public string $deletePattern = '';
 
     public function createList(): void
     {
@@ -127,6 +131,57 @@ new #[Title('Lists')] class extends Component {
         ));
     }
 
+    /**
+     * Permanently delete every list, active or drafted, whose name matches the
+     * pattern — the way out after a split produced far more lists than meant.
+     */
+    public function deleteListsByName(DeleteListsByName $deleter): void
+    {
+        Gate::authorize('deleteLists', $this->currentTeam());
+
+        $validated = $this->validate([
+            'deletePattern' => ['required', 'string', 'max:255'],
+        ], [], [
+            'deletePattern' => __('name pattern'),
+        ]);
+
+        if (! DeleteListsByName::isUsablePattern($validated['deletePattern'])) {
+            $this->addError('deletePattern', __('Add some of the name to the pattern — a wildcard on its own would match every list.'));
+
+            return;
+        }
+
+        $deleted = $deleter->handle($this->currentTeam(), $validated['deletePattern']);
+
+        $this->dispatch('close-modal', name: 'delete-by-name');
+        $this->reset('deletePattern');
+
+        unset($this->lists, $this->draftsCount, $this->draftsContactsCount, $this->patternMatches);
+
+        if ($deleted['lists'] === 0 && $deleted['skipped'] === 0) {
+            Flux::toast(variant: 'warning', text: __('No lists matched that name.'));
+
+            return;
+        }
+
+        Flux::toast(variant: $deleted['skipped'] > 0 ? 'warning' : 'success', text: trans_choice(
+            '{0}Deleted no lists.|{1}Deleted :count list and :contacts.|[2,*]Deleted :count lists and :contacts.',
+            $deleted['lists'],
+            [
+                'count' => number_format($deleted['lists']),
+                'contacts' => trans_choice(
+                    '{0}no contacts|{1}:count contact|[2,*]:count contacts',
+                    $deleted['contacts'],
+                    ['count' => number_format($deleted['contacts'])],
+                ),
+            ],
+        ).($deleted['skipped'] > 0 ? ' '.trans_choice(
+            '{1}:count list was skipped because a send or import is still running on it.|[2,*]:count lists were skipped because a send or import is still running on them.',
+            $deleted['skipped'],
+            ['count' => number_format($deleted['skipped'])],
+        ) : ''));
+    }
+
     protected function currentTeam()
     {
         return Auth::user()->currentTeam;
@@ -202,10 +257,34 @@ new #[Title('Lists')] class extends Component {
     }
 
     /**
-     * Whether this user may empty the drafts shelf.
+     * What deleting by the current pattern would destroy, so a pattern that is
+     * broader than intended shows up before anything is gone.
+     *
+     * @return array{lists: int, contacts: int, busy: int, names: array<int, string>}|null
      */
     #[Computed]
-    public function canEmptyDrafts(): bool
+    public function patternMatches(): ?array
+    {
+        if (! DeleteListsByName::isUsablePattern($this->deletePattern)) {
+            return null;
+        }
+
+        $matching = fn () => $this->currentTeam()->contactLists()->nameMatches($this->deletePattern);
+
+        return [
+            'lists' => $matching()->count(),
+            'contacts' => $this->currentTeam()->contacts()->whereIn('contact_list_id', $matching()->select('id'))->count(),
+            'busy' => $matching()->active()->count() - $matching()->active()->idle()->count(),
+            'names' => $matching()->orderBy('name')->limit(5)->pluck('name')->all(),
+        ];
+    }
+
+    /**
+     * Whether this user may permanently delete lists — emptying the drafts
+     * shelf or deleting by name.
+     */
+    #[Computed]
+    public function canDeleteLists(): bool
     {
         return Auth::user()->can('deleteLists', $this->currentTeam());
     }
@@ -253,20 +332,37 @@ new #[Title('Lists')] class extends Component {
             </flux:modal.trigger>
         @endif
 
-        @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canEmptyDrafts)
-            <flux:modal.trigger name="empty-drafts">
-                <flux:button
-                    size="sm"
-                    variant="danger"
-                    icon="trash"
-                    x-data=""
-                    x-on:click.prevent="$dispatch('open-modal', 'empty-drafts')"
-                    data-test="empty-drafts-button"
-                >
-                    {{ __('Empty drafts') }}
-                </flux:button>
-            </flux:modal.trigger>
-        @endif
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($this->canDeleteLists)
+                <flux:modal.trigger name="delete-by-name">
+                    <flux:button
+                        size="sm"
+                        variant="subtle"
+                        icon="trash"
+                        x-data=""
+                        x-on:click.prevent="$dispatch('open-modal', 'delete-by-name')"
+                        data-test="delete-by-name-button"
+                    >
+                        {{ __('Delete by name') }}
+                    </flux:button>
+                </flux:modal.trigger>
+            @endif
+
+            @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canDeleteLists)
+                <flux:modal.trigger name="empty-drafts">
+                    <flux:button
+                        size="sm"
+                        variant="danger"
+                        icon="trash"
+                        x-data=""
+                        x-on:click.prevent="$dispatch('open-modal', 'empty-drafts')"
+                        data-test="empty-drafts-button"
+                    >
+                        {{ __('Empty drafts') }}
+                    </flux:button>
+                </flux:modal.trigger>
+            @endif
+        </div>
     </div>
 
     <div class="space-y-3">
@@ -305,7 +401,91 @@ new #[Title('Lists')] class extends Component {
 
     {{-- Rendered only alongside its trigger: an always-present modal would put
          the confirmation's wording on the page for someone who cannot use it. --}}
-    @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canEmptyDrafts)
+    @if ($this->canDeleteLists)
+        <flux:modal name="delete-by-name" :show="$errors->has('deletePattern')" focusable class="max-w-lg">
+            <form wire:submit="deleteListsByName" class="space-y-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Delete lists by name') }}</flux:heading>
+                    <flux:subheading>
+                        {{ __('Every list whose name matches is deleted permanently with its contacts, whether it is active or a draft. Use * to stand for any text.') }}
+                    </flux:subheading>
+                </div>
+
+                <flux:input
+                    wire:model.live.debounce.400ms="deletePattern"
+                    :label="__('Name pattern')"
+                    :placeholder="__('e.g. ElechyComplete 15 *')"
+                    data-test="delete-pattern"
+                />
+
+                @if ($this->patternMatches)
+                    <div class="space-y-2" data-test="delete-pattern-preview">
+                        <flux:text class="text-sm">
+                            {{ trans_choice(
+                                '{0}No lists match this pattern.|{1}Matches :count list holding :contacts.|[2,*]Matches :count lists holding :contacts.',
+                                $this->patternMatches['lists'],
+                                [
+                                    'count' => number_format($this->patternMatches['lists']),
+                                    'contacts' => trans_choice(
+                                        '{0}no contacts|{1}:count contact|[2,*]:count contacts',
+                                        $this->patternMatches['contacts'],
+                                        ['count' => number_format($this->patternMatches['contacts'])],
+                                    ),
+                                ],
+                            ) }}
+                        </flux:text>
+
+                        @if ($this->patternMatches['lists'] > 0)
+                            <ul class="list-inside list-disc text-sm text-zinc-500 dark:text-zinc-400">
+                                @foreach ($this->patternMatches['names'] as $index => $matchedName)
+                                    <li wire:key="pattern-match-{{ $index }}">{{ $matchedName }}</li>
+                                @endforeach
+                                @if ($this->patternMatches['lists'] > count($this->patternMatches['names']))
+                                    <li class="list-none">
+                                        {{ __('…and :count more', ['count' => number_format($this->patternMatches['lists'] - count($this->patternMatches['names']))]) }}
+                                    </li>
+                                @endif
+                            </ul>
+                        @endif
+
+                        @if ($this->patternMatches['busy'] > 0)
+                            <flux:text class="text-sm text-amber-600 dark:text-amber-400">
+                                {{ trans_choice(
+                                    '{1}:count of them has a send or import still running and will be skipped.|[2,*]:count of them have a send or import still running and will be skipped.',
+                                    $this->patternMatches['busy'],
+                                    ['count' => number_format($this->patternMatches['busy'])],
+                                ) }}
+                            </flux:text>
+                        @endif
+                    </div>
+                @endif
+
+                <flux:callout variant="warning" icon="exclamation-triangle">
+                    <flux:callout.text>
+                        {{ __('There is no undo. Past deliveries are kept, but the matching lists and their contacts are gone for good.') }}
+                    </flux:callout.text>
+                </flux:callout>
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button
+                        variant="danger"
+                        type="submit"
+                        :disabled="! $this->patternMatches || $this->patternMatches['lists'] === 0"
+                        data-test="delete-by-name-submit"
+                    >
+                        {{ $this->patternMatches && $this->patternMatches['lists'] > 0
+                            ? trans_choice('{1}Delete :count list|[2,*]Delete :count lists', $this->patternMatches['lists'], ['count' => number_format($this->patternMatches['lists'])])
+                            : __('Delete lists') }}
+                    </flux:button>
+                </div>
+            </form>
+        </flux:modal>
+    @endif
+
+    @if ($this->showingDrafts() && $this->draftsCount > 0 && $this->canDeleteLists)
         <flux:modal name="empty-drafts" class="max-w-lg">
             <div class="space-y-6">
                 <div>

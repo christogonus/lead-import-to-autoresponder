@@ -331,6 +331,108 @@ test('emptying an already empty drafts shelf changes nothing', function () {
     $this->assertDatabaseHas('contact_lists', ['id' => $active->id]);
 });
 
+test('deleting by name removes every matching list on either shelf with its contacts', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $activeMatch = draftTestList($user, ['name' => 'ElechyComplete 15 1']);
+    $draftedMatch = ContactList::factory()->drafted()->create(['team_id' => $team->id, 'name' => 'ElechyComplete 15 2']);
+    $kept = collect([
+        draftTestList($user, ['name' => 'ElechyComplete']),
+        draftTestList($user, ['name' => 'ElechyComplete 150 1']),
+        draftTestList($user, ['name' => 'Other 15 1']),
+    ]);
+
+    Contact::factory()->count(2)->create(['team_id' => $team->id, 'contact_list_id' => $activeMatch->id]);
+    Contact::factory()->create(['team_id' => $team->id, 'contact_list_id' => $draftedMatch->id]);
+    $keptContact = Contact::factory()->create(['team_id' => $team->id, 'contact_list_id' => $kept->first()->id]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->set('deletePattern', 'ElechyComplete 15 *')
+        ->assertSet('patternMatches.lists', 2)
+        ->assertSet('patternMatches.contacts', 3)
+        ->call('deleteListsByName')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseMissing('contact_lists', ['id' => $activeMatch->id]);
+    $this->assertDatabaseMissing('contact_lists', ['id' => $draftedMatch->id]);
+
+    foreach ($kept as $list) {
+        $this->assertDatabaseHas('contact_lists', ['id' => $list->id, 'drafted_at' => null]);
+    }
+
+    expect(Contact::pluck('id')->all())->toBe([$keptContact->id]);
+});
+
+test('deleting by name takes percent and underscore literally', function () {
+    $user = User::factory()->create();
+    $literal = draftTestList($user, ['name' => '50% off_now']);
+    $lookalike = draftTestList($user, ['name' => '50X offXnow']);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->set('deletePattern', '50% off_now')
+        ->call('deleteListsByName')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseMissing('contact_lists', ['id' => $literal->id]);
+    $this->assertDatabaseHas('contact_lists', ['id' => $lookalike->id]);
+});
+
+test('deleting by name refuses a pattern of only wildcards', function (string $pattern) {
+    $user = User::factory()->create();
+    $list = draftTestList($user);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->set('deletePattern', $pattern)
+        ->assertSet('patternMatches', null)
+        ->call('deleteListsByName')
+        ->assertHasErrors('deletePattern');
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $list->id]);
+})->with(['*', ' * * ', '']);
+
+test('deleting by name skips a matching list with a send still running', function () {
+    $user = User::factory()->create();
+    $busy = draftTestList($user, ['name' => 'Split 1']);
+    $idle = draftTestList($user, ['name' => 'Split 2']);
+    Delivery::factory()->create([
+        'team_id' => $busy->team_id,
+        'contact_list_id' => $busy->id,
+        'status' => Delivery::STATUS_PROCESSING,
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->set('deletePattern', 'Split *')
+        ->assertSet('patternMatches.busy', 1)
+        ->call('deleteListsByName');
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $busy->id, 'drafted_at' => null]);
+    $this->assertDatabaseMissing('contact_lists', ['id' => $idle->id]);
+});
+
+test('deleting by name leaves another team alone', function () {
+    $user = User::factory()->create();
+    $foreign = ContactList::factory()->create(['name' => 'Split 1']);
+    draftTestList($user, ['name' => 'Split 2']);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::lists.index')
+        ->set('deletePattern', 'Split *')
+        ->assertSet('patternMatches.lists', 1)
+        ->call('deleteListsByName');
+
+    $this->assertDatabaseHas('contact_lists', ['id' => $foreign->id, 'drafted_at' => null]);
+});
+
 test('the empty drafts button only appears on the drafts shelf', function () {
     $user = User::factory()->create();
     ContactList::factory()->drafted()->create(['team_id' => $user->currentTeam->id]);
