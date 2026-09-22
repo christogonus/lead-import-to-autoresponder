@@ -9,6 +9,7 @@ use App\Integrations\Drivers\GetResponseProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\MailchimpProvider;
 use App\Integrations\Drivers\SenderNetProvider;
+use App\Integrations\Drivers\SendXProvider;
 use App\Integrations\Drivers\SystemeIoProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
 use App\Integrations\OAuth\OAuthConfig;
@@ -23,6 +24,7 @@ enum IntegrationProvider: string
     case GoToWebinar = 'gotowebinar';
     case ZohoCampaigns = 'zoho_campaigns';
     case SenderNet = 'sender_net';
+    case SendX = 'sendx';
 
     /**
      * Get the human-readable label for the provider.
@@ -38,6 +40,7 @@ enum IntegrationProvider: string
             self::GoToWebinar => 'GoToWebinar',
             self::ZohoCampaigns => 'Zoho Campaigns',
             self::SenderNet => 'Sender.net',
+            self::SendX => 'SendX',
         };
     }
 
@@ -55,6 +58,7 @@ enum IntegrationProvider: string
             self::GoToWebinar => 'webinar',
             self::ZohoCampaigns => 'mailing list',
             self::SenderNet => 'group',
+            self::SendX => 'list',
         };
     }
 
@@ -74,6 +78,7 @@ enum IntegrationProvider: string
             self::GoToWebinar => GoToWebinarProvider::class,
             self::ZohoCampaigns => ZohoCampaignsProvider::class,
             self::SenderNet => SenderNetProvider::class,
+            self::SendX => SendXProvider::class,
         };
     }
 
@@ -192,6 +197,14 @@ enum IntegrationProvider: string
                     'label' => 'API access token',
                     'type' => 'password',
                     'hint' => 'Create one in Sender under Settings → API access tokens (app.sender.net/settings/tokens).',
+                ],
+            ],
+            self::SendX => [
+                [
+                    'key' => 'api_key',
+                    'label' => 'Team API key',
+                    'type' => 'password',
+                    'hint' => 'Found in SendX under Settings → API & Webhooks → Team API Key (app.sendx.io/setting/connectors/api).',
                 ],
             ],
             // AWeber and GoToWebinar connect via OAuth, so there are no manual

@@ -172,3 +172,40 @@ test('sender.net credentials that the provider rejects are not saved', function 
 
     $this->assertDatabaseCount('integrations', 0);
 });
+
+test('a sendx integration can be connected through the same flow', function () {
+    Http::fake(['api.sendx.io/api/v1/rest/list*' => Http::response([], 200)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'sendx')
+        ->set('name', 'My SendX')
+        ->set('credentials.api_key', 'valid-key')
+        ->call('connect')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('integrations', [
+        'team_id' => $user->currentTeam->id,
+        'name' => 'My SendX',
+        'provider' => 'sendx',
+        'status' => 'connected',
+    ]);
+});
+
+test('sendx credentials that the provider rejects are not saved', function () {
+    Http::fake(['api.sendx.io/api/v1/rest/list*' => Http::response(['status' => 401, 'message' => 'The Team ID or API Key specified is not valid'], 401)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'sendx')
+        ->set('name', 'My SendX')
+        ->set('credentials.api_key', 'bad-key')
+        ->call('connect')
+        ->assertHasErrors('credentials');
+
+    $this->assertDatabaseCount('integrations', 0);
+});
