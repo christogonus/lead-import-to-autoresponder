@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Enums\IntegrationProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
+use App\Integrations\Drivers\SendPulseProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
 use App\Jobs\PushDeliveryContact;
 use Carbon\CarbonImmutable;
@@ -50,6 +51,8 @@ class AppServiceProvider extends ServiceProvider
                     ->by('zoho-campaigns:'.$integration->id),
                 IntegrationProvider::GoToWebinar => Limit::perSecond(GoToWebinarProvider::CALLS_PER_SECOND_LIMIT)
                     ->by('gotowebinar:'.$integration->id),
+                IntegrationProvider::SendPulse => Limit::perSecond(SendPulseProvider::CALLS_PER_SECOND_LIMIT)
+                    ->by('sendpulse:'.$integration->id),
                 default => Limit::none(),
             };
         });

@@ -101,7 +101,7 @@ Outstanding work and known limitations, most actionable first.
   handles Zoho's `Zoho-oauthtoken` auth scheme, its errors-inside-HTTP-200 convention, and
   its `contactinfo` JSON-string parameter. Region is set by `ZOHO_CAMPAIGNS_REGION`, with
   each connection pinned to the `api_domain` it was authorized against.
-- [x] Providers: GetResponse, Systeme.io, Mailchimp, BirdSend, Sender.net, SendX (API key);
+- [x] Providers: GetResponse, Systeme.io, Mailchimp, BirdSend, Sender.net, SendX, SendPulse (API key);
   AWeber, GoToWebinar, Zoho Campaigns (OAuth2, with token refresh).
 - [x] Decoupled import from sending — lists are contact groups; a list can be **sent to
   many destinations** independently, each tracked per-contact (dedup per destination).

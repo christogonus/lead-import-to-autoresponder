@@ -9,6 +9,7 @@ use App\Integrations\Drivers\GetResponseProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\MailchimpProvider;
 use App\Integrations\Drivers\SenderNetProvider;
+use App\Integrations\Drivers\SendPulseProvider;
 use App\Integrations\Drivers\SendXProvider;
 use App\Integrations\Drivers\SystemeIoProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
@@ -25,6 +26,7 @@ enum IntegrationProvider: string
     case ZohoCampaigns = 'zoho_campaigns';
     case SenderNet = 'sender_net';
     case SendX = 'sendx';
+    case SendPulse = 'sendpulse';
 
     /**
      * Get the human-readable label for the provider.
@@ -41,6 +43,7 @@ enum IntegrationProvider: string
             self::ZohoCampaigns => 'Zoho Campaigns',
             self::SenderNet => 'Sender.net',
             self::SendX => 'SendX',
+            self::SendPulse => 'SendPulse',
         };
     }
 
@@ -59,6 +62,7 @@ enum IntegrationProvider: string
             self::ZohoCampaigns => 'mailing list',
             self::SenderNet => 'group',
             self::SendX => 'list',
+            self::SendPulse => 'mailing list',
         };
     }
 
@@ -79,6 +83,7 @@ enum IntegrationProvider: string
             self::ZohoCampaigns => ZohoCampaignsProvider::class,
             self::SenderNet => SenderNetProvider::class,
             self::SendX => SendXProvider::class,
+            self::SendPulse => SendPulseProvider::class,
         };
     }
 
@@ -205,6 +210,14 @@ enum IntegrationProvider: string
                     'label' => 'Team API key',
                     'type' => 'password',
                     'hint' => 'Found in SendX under Settings → API & Webhooks → Team API Key (app.sendx.io/setting/connectors/api).',
+                ],
+            ],
+            self::SendPulse => [
+                [
+                    'key' => 'api_key',
+                    'label' => 'API key',
+                    'type' => 'password',
+                    'hint' => 'Create one in SendPulse under Settings → API → API keys. The API ID and Secret are not used.',
                 ],
             ],
             // AWeber and GoToWebinar connect via OAuth, so there are no manual

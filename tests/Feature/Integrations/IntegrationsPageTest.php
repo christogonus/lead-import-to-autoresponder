@@ -209,3 +209,40 @@ test('sendx credentials that the provider rejects are not saved', function () {
 
     $this->assertDatabaseCount('integrations', 0);
 });
+
+test('a sendpulse integration can be connected through the same flow', function () {
+    Http::fake(['api.sendpulse.com/addressbooks*' => Http::response([], 200)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'sendpulse')
+        ->set('name', 'My SendPulse')
+        ->set('credentials.api_key', 'valid-key')
+        ->call('connect')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('integrations', [
+        'team_id' => $user->currentTeam->id,
+        'name' => 'My SendPulse',
+        'provider' => 'sendpulse',
+        'status' => 'connected',
+    ]);
+});
+
+test('sendpulse credentials that the provider rejects are not saved', function () {
+    Http::fake(['api.sendpulse.com/addressbooks*' => Http::response(['error' => 'invalid_client', 'message' => 'Client authentication failed.'], 401)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'sendpulse')
+        ->set('name', 'My SendPulse')
+        ->set('credentials.api_key', 'bad-key')
+        ->call('connect')
+        ->assertHasErrors('credentials');
+
+    $this->assertDatabaseCount('integrations', 0);
+});
