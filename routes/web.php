@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ExportContactListController;
 use App\Http\Controllers\OAuthController;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
@@ -16,6 +17,7 @@ Route::prefix('{current_team}')
 
         Route::livewire('lists', 'pages::lists.index')->name('lists.index');
         Route::livewire('lists/{contactList}', 'pages::lists.show')->name('lists.show');
+        Route::get('lists/{contactList}/export', ExportContactListController::class)->name('lists.export');
 
         Route::livewire('deliveries', 'pages::deliveries.index')->name('deliveries.index');
 

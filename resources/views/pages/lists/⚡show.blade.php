@@ -858,6 +858,14 @@ new #[Title('List')] class extends Component
                 <flux:button variant="subtle" icon="ellipsis-horizontal" square :aria-label="__('List actions')" data-test="list-actions-button" />
 
                 <flux:menu>
+                    @if ($this->contactsCount > 0)
+                        <flux:menu.item icon="arrow-down-tray" :href="route('lists.export', $contactList)" data-test="export-list">
+                            {{ __('Export to CSV') }}
+                        </flux:menu.item>
+
+                        <flux:menu.separator />
+                    @endif
+
                     @if ($contactList->isDraft())
                         <flux:menu.item icon="arrow-uturn-left" wire:click="restoreList" data-test="restore-list">
                             {{ __('Restore list') }}
