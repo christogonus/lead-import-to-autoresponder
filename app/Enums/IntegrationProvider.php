@@ -4,6 +4,7 @@ namespace App\Enums;
 
 use App\Integrations\Contracts\AutoresponderProvider;
 use App\Integrations\Drivers\AWeberProvider;
+use App\Integrations\Drivers\BeehiivProvider;
 use App\Integrations\Drivers\BirdSendProvider;
 use App\Integrations\Drivers\GetResponseProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
@@ -27,6 +28,7 @@ enum IntegrationProvider: string
     case SenderNet = 'sender_net';
     case SendX = 'sendx';
     case SendPulse = 'sendpulse';
+    case Beehiiv = 'beehiiv';
 
     /**
      * Get the human-readable label for the provider.
@@ -44,6 +46,7 @@ enum IntegrationProvider: string
             self::SenderNet => 'Sender.net',
             self::SendX => 'SendX',
             self::SendPulse => 'SendPulse',
+            self::Beehiiv => 'beehiiv',
         };
     }
 
@@ -63,6 +66,7 @@ enum IntegrationProvider: string
             self::SenderNet => 'group',
             self::SendX => 'list',
             self::SendPulse => 'mailing list',
+            self::Beehiiv => 'publication',
         };
     }
 
@@ -84,6 +88,7 @@ enum IntegrationProvider: string
             self::SenderNet => SenderNetProvider::class,
             self::SendX => SendXProvider::class,
             self::SendPulse => SendPulseProvider::class,
+            self::Beehiiv => BeehiivProvider::class,
         };
     }
 
@@ -218,6 +223,14 @@ enum IntegrationProvider: string
                     'label' => 'API key',
                     'type' => 'password',
                     'hint' => 'Create one in SendPulse under Settings → API → API keys. The API ID and Secret are not used.',
+                ],
+            ],
+            self::Beehiiv => [
+                [
+                    'key' => 'api_key',
+                    'label' => 'API key',
+                    'type' => 'password',
+                    'hint' => 'Create one in beehiiv under Settings → Workspace Settings → API. Subscriber names and phone numbers only land on publications with custom fields named First Name, Last Name, Phone and Country.',
                 ],
             ],
             // AWeber and GoToWebinar connect via OAuth, so there are no manual

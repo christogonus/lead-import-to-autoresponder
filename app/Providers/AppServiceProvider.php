@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Enums\IntegrationProvider;
+use App\Integrations\Drivers\BeehiivProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\SendPulseProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
@@ -53,6 +54,8 @@ class AppServiceProvider extends ServiceProvider
                     ->by('gotowebinar:'.$integration->id),
                 IntegrationProvider::SendPulse => Limit::perSecond(SendPulseProvider::CALLS_PER_SECOND_LIMIT)
                     ->by('sendpulse:'.$integration->id),
+                IntegrationProvider::Beehiiv => Limit::perMinute(BeehiivProvider::CALLS_PER_MINUTE_LIMIT)
+                    ->by('beehiiv:'.$integration->id),
                 default => Limit::none(),
             };
         });

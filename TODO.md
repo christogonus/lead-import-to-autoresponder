@@ -84,6 +84,14 @@ Outstanding work and known limitations, most actionable first.
   each account's own field ids, so they are not mapped either. Sender publishes no
   request-per-minute figure, so nothing paces it beyond the generic 429 retry.
 
+- [ ] **beehiiv pushes names only into matching custom fields.** beehiiv has no standard
+  name or phone fields and silently discards custom fields a publication has not defined,
+  so first/last name, phone and country only land on publications with custom fields named
+  exactly `First Name`, `Last Name`, `Phone` and `Country`. The subscriber itself always
+  lands. Pushes send beehiiv's welcome email and do not reactivate unsubscribed addresses.
+  The 180/minute rate limit is per beehiiv organization but enforced per integration, so
+  two integrations on one organization can still overrun it (the 429 retry covers that).
+
 ## Done (recent)
 
 - [x] **GoToWebinar registrant names** now derive from the email's local part
@@ -101,7 +109,7 @@ Outstanding work and known limitations, most actionable first.
   handles Zoho's `Zoho-oauthtoken` auth scheme, its errors-inside-HTTP-200 convention, and
   its `contactinfo` JSON-string parameter. Region is set by `ZOHO_CAMPAIGNS_REGION`, with
   each connection pinned to the `api_domain` it was authorized against.
-- [x] Providers: GetResponse, Systeme.io, Mailchimp, BirdSend, Sender.net, SendX, SendPulse (API key);
+- [x] Providers: GetResponse, Systeme.io, Mailchimp, BirdSend, Sender.net, SendX, SendPulse, beehiiv (API key);
   AWeber, GoToWebinar, Zoho Campaigns (OAuth2, with token refresh).
 - [x] Decoupled import from sending — lists are contact groups; a list can be **sent to
   many destinations** independently, each tracked per-contact (dedup per destination).

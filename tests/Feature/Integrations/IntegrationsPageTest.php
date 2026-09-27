@@ -246,3 +246,40 @@ test('sendpulse credentials that the provider rejects are not saved', function (
 
     $this->assertDatabaseCount('integrations', 0);
 });
+
+test('a beehiiv integration can be connected through the same flow', function () {
+    Http::fake(['api.beehiiv.com/v2/publications*' => Http::response(['data' => [], 'page' => 1, 'total_pages' => 1], 200)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'beehiiv')
+        ->set('name', 'My beehiiv')
+        ->set('credentials.api_key', 'valid-key')
+        ->call('connect')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('integrations', [
+        'team_id' => $user->currentTeam->id,
+        'name' => 'My beehiiv',
+        'provider' => 'beehiiv',
+        'status' => 'connected',
+    ]);
+});
+
+test('beehiiv credentials that the provider rejects are not saved', function () {
+    Http::fake(['api.beehiiv.com/v2/publications*' => Http::response(['errors' => [['message' => 'Invalid API key']]], 401)]);
+
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::integrations.index')
+        ->set('provider', 'beehiiv')
+        ->set('name', 'My beehiiv')
+        ->set('credentials.api_key', 'bad-key')
+        ->call('connect')
+        ->assertHasErrors('credentials');
+
+    $this->assertDatabaseCount('integrations', 0);
+});

@@ -2,6 +2,7 @@
 
 use App\Enums\ContactStatus;
 use App\Enums\IntegrationProvider;
+use App\Integrations\Drivers\BeehiivProvider;
 use App\Integrations\Drivers\GoToWebinarProvider;
 use App\Integrations\Drivers\SendPulseProvider;
 use App\Integrations\Drivers\ZohoCampaignsProvider;
@@ -85,6 +86,17 @@ test('sendpulse pushes are capped at its hard per-second rate per integration', 
     expect($limit)->not->toBeInstanceOf(Unlimited::class)
         ->and($limit->maxAttempts)->toBe(SendPulseProvider::CALLS_PER_SECOND_LIMIT)
         ->and($limit->decaySeconds)->toBe(1)
+        ->and($limit->key)->toContain((string) $deliveryContact->delivery->integration_id);
+});
+
+test('beehiiv pushes are capped at its per-minute rate per integration', function () {
+    $deliveryContact = pendingPushFor(IntegrationProvider::Beehiiv);
+
+    $limit = RateLimiter::limiter('autoresponder-push')(new PushDeliveryContact($deliveryContact));
+
+    expect($limit)->not->toBeInstanceOf(Unlimited::class)
+        ->and($limit->maxAttempts)->toBe(BeehiivProvider::CALLS_PER_MINUTE_LIMIT)
+        ->and($limit->decaySeconds)->toBe(60)
         ->and($limit->key)->toContain((string) $deliveryContact->delivery->integration_id);
 });
 
