@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -530,6 +531,12 @@ new #[Title('List')] class extends Component
         Flux::toast(variant: 'success', text: __('Retrying failed contacts.'));
     }
 
+    #[On('deliveries-deleted')]
+    public function refreshDeliveries(): void
+    {
+        unset($this->deliveries);
+    }
+
     public function deleteContact(Contact $contact): void
     {
         abort_unless($contact->contact_list_id === $this->contactList->id, 403);
@@ -952,6 +959,12 @@ new #[Title('List')] class extends Component
                                 {{ __('Retry :count failed', ['count' => $delivery->failed_count]) }}
                             </flux:button>
                         @endif
+
+                        @if ($delivery->isDeletable())
+                            @can('deleteDeliveries', $contactList->team)
+                                <flux:button variant="subtle" size="sm" icon="trash" square :aria-label="__('Delete delivery')" wire:click="$dispatch('confirm-delete-deliveries', { deliveryIds: [{{ $delivery->id }}] })" data-test="delete-delivery-button" />
+                            @endcan
+                        @endif
                     </div>
                 </div>
             @endforeach
@@ -959,6 +972,10 @@ new #[Title('List')] class extends Component
     @endif
 
     <livewire:delivery-failures />
+
+    @can('deleteDeliveries', $contactList->team)
+        <livewire:delete-deliveries-modal />
+    @endcan
 
     {{-- Contacts --}}
     <div class="flex items-center justify-between gap-4">

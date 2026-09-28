@@ -180,6 +180,15 @@ class Delivery extends Model
     }
 
     /**
+     * Whether this delivery has finished, so deleting it cannot pull the record
+     * out from under a push still in flight.
+     */
+    public function isDeletable(): bool
+    {
+        return $this->status !== self::STATUS_PROCESSING;
+    }
+
+    /**
      * This delivery's status as currently stored, bypassing any value held on
      * this instance.
      */

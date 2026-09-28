@@ -6,6 +6,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -31,6 +32,13 @@ new #[Title('Deliveries')] class extends Component {
     #[Url(except: '')]
     public string $provider = '';
 
+    /**
+     * Deliveries ticked for bulk deletion.
+     *
+     * @var array<int, string>
+     */
+    public array $selected = [];
+
     public function updatedStatus(): void
     {
         $this->resetPage();
@@ -55,6 +63,50 @@ new #[Title('Deliveries')] class extends Component {
     {
         $this->status = $status;
         $this->resetPage();
+    }
+
+    /**
+     * Tick every deletable delivery on this page, or clear the selection when
+     * they are all ticked already.
+     */
+    public function togglePageSelection(): void
+    {
+        $pageIds = $this->deletableIdsOnPage();
+
+        $this->selected = array_diff($pageIds, $this->selected) === []
+            ? array_values(array_diff($this->selected, $pageIds))
+            : array_values(array_unique([...$this->selected, ...$pageIds]));
+    }
+
+    public function confirmDeleteSelected(): void
+    {
+        $this->dispatch('confirm-delete-deliveries', deliveryIds: $this->selected);
+    }
+
+    #[On('deliveries-deleted')]
+    public function refreshAfterDeletion(): void
+    {
+        $this->selected = [];
+
+        unset($this->deliveries, $this->statusCounts, $this->providers);
+
+        // Deleting the last rows of the final page would otherwise leave the
+        // view stranded on an empty page past the end.
+        if ($this->deliveries->isEmpty() && $this->getPage() > 1) {
+            $this->resetPage();
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function deletableIdsOnPage(): array
+    {
+        return $this->deliveries->getCollection()
+            ->filter(fn (Delivery $delivery) => $delivery->isDeletable())
+            ->map(fn (Delivery $delivery) => (string) $delivery->id)
+            ->values()
+            ->all();
     }
 
     protected function currentTeam()
@@ -157,6 +209,15 @@ new #[Title('Deliveries')] class extends Component {
     }
 
     /**
+     * Whether this user may delete deliveries.
+     */
+    #[Computed]
+    public function canDeleteDeliveries(): bool
+    {
+        return Auth::user()->can('deleteDeliveries', $this->currentTeam());
+    }
+
+    /**
      * The provider filter as an enum, ignoring a value that names no provider.
      */
     protected function selectedProvider(): ?IntegrationProvider
@@ -223,33 +284,61 @@ new #[Title('Deliveries')] class extends Component {
         </div>
     </div>
 
+    @if ($this->canDeleteDeliveries && $this->deliveries->isNotEmpty())
+        <div class="flex flex-wrap items-center gap-3">
+            <flux:button size="sm" variant="ghost" wire:click="togglePageSelection" data-test="select-page">
+                {{ __('Select page') }}
+            </flux:button>
+
+            @if (count($selected) > 0)
+                <flux:button size="sm" variant="danger" icon="trash" wire:click="confirmDeleteSelected" data-test="delete-selected">
+                    {{ __('Delete :count selected', ['count' => count($selected)]) }}
+                </flux:button>
+
+                <flux:button size="sm" variant="ghost" wire:click="$set('selected', [])" data-test="clear-selection">
+                    {{ __('Clear') }}
+                </flux:button>
+            @endif
+        </div>
+    @endif
+
     <div class="space-y-3">
         @forelse ($this->deliveries as $delivery)
-            <div class="flex items-center justify-between rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900" data-test="delivery-row">
-                <div>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-medium">{{ $delivery->listLabel() }}</span>
+            <div wire:key="delivery-{{ $delivery->id }}" class="flex items-center justify-between gap-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900" data-test="delivery-row">
+                <div class="flex items-start gap-3">
+                    @if ($this->canDeleteDeliveries)
+                        <div class="w-5 shrink-0 pt-0.5">
+                            @if ($delivery->isDeletable())
+                                <flux:checkbox wire:model.live="selected" value="{{ $delivery->id }}" data-test="select-delivery" />
+                            @endif
+                        </div>
+                    @endif
 
-                        @if ($delivery->listWasDeleted())
-                            <flux:badge size="sm" color="zinc" data-test="deleted-list-badge">{{ __('List deleted') }}</flux:badge>
-                        @endif
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-medium">{{ $delivery->listLabel() }}</span>
+
+                            @if ($delivery->listWasDeleted())
+                                <flux:badge size="sm" color="zinc" data-test="deleted-list-badge">{{ __('List deleted') }}</flux:badge>
+                            @endif
+
+                            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
+                                &rarr; {{ $delivery->integration?->name }} &middot; {{ $delivery->destinationLabel() }}
+                            </flux:text>
+
+                            <flux:badge size="sm" :color="$delivery->statusColor()">
+                                {{ $delivery->statusLabel() }}
+                            </flux:badge>
+                        </div>
 
                         <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                            &rarr; {{ $delivery->integration?->name }} &middot; {{ $delivery->destinationLabel() }}
+                            {{ __(':synced of :total synced', ['synced' => $delivery->synced_count, 'total' => $delivery->total_count]) }}
+                            @if ($delivery->failed_count > 0)
+                                &middot; <span class="text-red-500">{{ __(':count failed', ['count' => $delivery->failed_count]) }}</span>
+                            @endif
+                            &middot; {{ $delivery->created_at->diffForHumans() }}
                         </flux:text>
-
-                        <flux:badge size="sm" :color="$delivery->statusColor()">
-                            {{ $delivery->statusLabel() }}
-                        </flux:badge>
                     </div>
-
-                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                        {{ __(':synced of :total synced', ['synced' => $delivery->synced_count, 'total' => $delivery->total_count]) }}
-                        @if ($delivery->failed_count > 0)
-                            &middot; <span class="text-red-500">{{ __(':count failed', ['count' => $delivery->failed_count]) }}</span>
-                        @endif
-                        &middot; {{ $delivery->created_at->diffForHumans() }}
-                    </flux:text>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -277,6 +366,18 @@ new #[Title('Deliveries')] class extends Component {
                             {{ __('View list') }}
                         </flux:button>
                     @endif
+
+                    @if ($this->canDeleteDeliveries && $delivery->isDeletable())
+                        <flux:button
+                            variant="subtle"
+                            size="sm"
+                            icon="trash"
+                            square
+                            :aria-label="__('Delete delivery')"
+                            wire:click="$dispatch('confirm-delete-deliveries', { deliveryIds: [{{ $delivery->id }}] })"
+                            data-test="delete-delivery-button"
+                        />
+                    @endif
                 </div>
             </div>
         @empty
@@ -296,4 +397,8 @@ new #[Title('Deliveries')] class extends Component {
     <div>{{ $this->deliveries->links() }}</div>
 
     <livewire:delivery-failures />
+
+    @if ($this->canDeleteDeliveries)
+        <livewire:delete-deliveries-modal />
+    @endif
 </div>

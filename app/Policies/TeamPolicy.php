@@ -93,6 +93,18 @@ class TeamPolicy
     }
 
     /**
+     * Determine whether the user can delete the team's finished deliveries.
+     *
+     * Held to the same bar as deleting lists: the per-contact history goes with
+     * the delivery, and with it the record that stops a re-send pushing those
+     * contacts to the destination again.
+     */
+    public function deleteDeliveries(User $user, Team $team): bool
+    {
+        return $user->belongsToTeam($team) && $user->hasTeamPermission($team, TeamPermission::DeleteList);
+    }
+
+    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Team $team): bool
