@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ExportContactListController;
+use App\Http\Controllers\ExportDeliveryFailuresController;
 use App\Http\Controllers\OAuthController;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,7 @@ Route::prefix('{current_team}')
         Route::get('lists/{contactList}/export', ExportContactListController::class)->name('lists.export');
 
         Route::livewire('deliveries', 'pages::deliveries.index')->name('deliveries.index');
+        Route::get('deliveries/{delivery}/failures/export', ExportDeliveryFailuresController::class)->name('deliveries.failures.export');
 
         Route::livewire('do-not-contact', 'pages::suppressions.index')->name('suppressions.index');
     });

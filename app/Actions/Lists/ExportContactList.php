@@ -24,7 +24,7 @@ class ExportContactList
     /**
      * @var array<string, string>
      */
-    private const COLUMNS = [
+    public const COLUMNS = [
         'first_name' => 'First Name',
         'last_name' => 'Last Name',
         'email' => 'Email',
@@ -57,9 +57,11 @@ class ExportContactList
     }
 
     /**
+     * The contact's cells, in the order of COLUMNS.
+     *
      * @return array<int, string>
      */
-    private function row(Contact $contact): array
+    public function row(Contact $contact): array
     {
         return collect(self::COLUMNS)
             ->keys()
@@ -85,7 +87,7 @@ class ExportContactList
      * cannot plant one in whoever opens the export. A phone number such as
      * "+44 20 7946 0958" is left alone: it is data, and the prefix would mangle it.
      */
-    private function neutraliseFormula(string $column, string $value): string
+    public function neutraliseFormula(string $column, string $value): string
     {
         if ($value === '' || ! in_array($value[0], self::FORMULA_TRIGGERS, true)) {
             return $value;

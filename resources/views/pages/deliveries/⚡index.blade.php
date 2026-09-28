@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\IntegrationProvider;
 use App\Models\Delivery;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,12 +23,30 @@ new #[Title('Deliveries')] class extends Component {
     #[Url(except: '')]
     public string $search = '';
 
+    /** Narrow the history to deliveries where at least one contact failed. */
+    #[Url(except: false)]
+    public bool $failedOnly = false;
+
+    /** Narrow the history to one provider; empty means every provider. */
+    #[Url(except: '')]
+    public string $provider = '';
+
     public function updatedStatus(): void
     {
         $this->resetPage();
     }
 
     public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedFailedOnly(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedProvider(): void
     {
         $this->resetPage();
     }
@@ -63,6 +82,11 @@ new #[Title('Deliveries')] class extends Component {
         return $this->currentTeam()->deliveries()
             ->with(['integration', 'contactList'])
             ->when($this->status !== self::STATUS_ALL, fn (Builder $query) => $query->where('status', $this->status))
+            ->when($this->failedOnly, fn (Builder $query) => $query->where('failed_count', '>', 0))
+            ->when($this->selectedProvider() !== null, fn (Builder $query) => $query->whereHas(
+                'integration',
+                fn (Builder $integration) => $integration->where('provider', $this->selectedProvider()),
+            ))
             ->when($this->trimmedSearch() !== '', function (Builder $query): void {
                 $term = '%'.$this->trimmedSearch().'%';
 
@@ -107,7 +131,37 @@ new #[Title('Deliveries')] class extends Component {
     #[Computed]
     public function isFiltered(): bool
     {
-        return $this->status !== self::STATUS_ALL || $this->trimmedSearch() !== '';
+        return $this->status !== self::STATUS_ALL
+            || $this->trimmedSearch() !== ''
+            || $this->failedOnly
+            || $this->selectedProvider() !== null;
+    }
+
+    /**
+     * The providers this team has sent to, for the provider filter. Taken from
+     * the deliveries rather than current integrations so a provider stays
+     * filterable after its connection is removed.
+     *
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function providers(): array
+    {
+        return $this->currentTeam()->integrations()
+            ->whereIn('id', $this->currentTeam()->deliveries()->select('integration_id'))
+            ->distinct()
+            ->pluck('provider')
+            ->mapWithKeys(fn (IntegrationProvider $provider) => [$provider->value => $provider->label()])
+            ->sort()
+            ->all();
+    }
+
+    /**
+     * The provider filter as an enum, ignoring a value that names no provider.
+     */
+    protected function selectedProvider(): ?IntegrationProvider
+    {
+        return IntegrationProvider::tryFrom($this->provider);
     }
 
     /**
@@ -146,14 +200,27 @@ new #[Title('Deliveries')] class extends Component {
             @endforeach
         </flux:button.group>
 
-        <flux:input
-            wire:model.live.debounce.300ms="search"
-            size="sm"
-            icon="magnifying-glass"
-            :placeholder="__('Search list or destination')"
-            class="max-w-xs"
-            data-test="delivery-search"
-        />
+        <div class="flex flex-wrap items-center gap-3">
+            <flux:checkbox wire:model.live="failedOnly" :label="__('With failures only')" data-test="failed-only-filter" />
+
+            @if (count($this->providers) > 1)
+                <flux:select wire:model.live="provider" size="sm" class="max-w-44" data-test="provider-filter">
+                    <flux:select.option value="">{{ __('All providers') }}</flux:select.option>
+                    @foreach ($this->providers as $value => $label)
+                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            @endif
+
+            <flux:input
+                wire:model.live.debounce.300ms="search"
+                size="sm"
+                icon="magnifying-glass"
+                :placeholder="__('Search list or destination')"
+                class="max-w-xs"
+                data-test="delivery-search"
+            />
+        </div>
     </div>
 
     <div class="space-y-3">
@@ -185,18 +252,32 @@ new #[Title('Deliveries')] class extends Component {
                     </flux:text>
                 </div>
 
-                @if (! $delivery->listWasDeleted())
-                    <flux:button
-                        variant="subtle"
-                        size="sm"
-                        icon="arrow-up-right"
-                        :href="route('lists.show', $delivery->contact_list_id)"
-                        wire:navigate
-                        data-test="view-list-button"
-                    >
-                        {{ __('View list') }}
-                    </flux:button>
-                @endif
+                <div class="flex items-center gap-2">
+                    @if ($delivery->failed_count > 0)
+                        <flux:button
+                            variant="subtle"
+                            size="sm"
+                            icon="exclamation-triangle"
+                            wire:click="$dispatch('show-delivery-failures', { deliveryId: {{ $delivery->id }} })"
+                            data-test="view-failures-button"
+                        >
+                            {{ __('View failed') }}
+                        </flux:button>
+                    @endif
+
+                    @if (! $delivery->listWasDeleted())
+                        <flux:button
+                            variant="subtle"
+                            size="sm"
+                            icon="arrow-up-right"
+                            :href="route('lists.show', $delivery->contact_list_id)"
+                            wire:navigate
+                            data-test="view-list-button"
+                        >
+                            {{ __('View list') }}
+                        </flux:button>
+                    @endif
+                </div>
             </div>
         @empty
             <flux:card class="text-center">
@@ -213,4 +294,6 @@ new #[Title('Deliveries')] class extends Component {
     </div>
 
     <div>{{ $this->deliveries->links() }}</div>
+
+    <livewire:delivery-failures />
 </div>

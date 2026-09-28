@@ -941,6 +941,12 @@ new #[Title('List')] class extends Component
                             </flux:button>
                         @endif
 
+                        @if ($delivery->failed_count > 0)
+                            <flux:button variant="subtle" size="sm" icon="exclamation-triangle" wire:click="$dispatch('show-delivery-failures', { deliveryId: {{ $delivery->id }} })" data-test="view-failures-button">
+                                {{ __('View failed') }}
+                            </flux:button>
+                        @endif
+
                         @if ($delivery->failed_count > 0 && $delivery->status !== App\Models\Delivery::STATUS_CANCELLED && ! $contactList->isDraft())
                             <flux:button variant="subtle" size="sm" icon="arrow-path" wire:click="retryDelivery({{ $delivery->id }})" data-test="retry-delivery-button">
                                 {{ __('Retry :count failed', ['count' => $delivery->failed_count]) }}
@@ -951,6 +957,8 @@ new #[Title('List')] class extends Component
             @endforeach
         </div>
     @endif
+
+    <livewire:delivery-failures />
 
     {{-- Contacts --}}
     <div class="flex items-center justify-between gap-4">
