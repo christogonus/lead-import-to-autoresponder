@@ -242,7 +242,7 @@ new #[Title('Deliveries')] class extends Component {
 
 <div class="flex h-full w-full flex-1 flex-col gap-6">
     <div>
-        <flux:heading size="xl">{{ __('Deliveries') }}</flux:heading>
+        <flux:heading size="xl" level="1">{{ __('Deliveries') }}</flux:heading>
         <flux:subheading>{{ __('Every send this team has made, including sends from lists that have since been deleted.') }}</flux:subheading>
     </div>
 

@@ -16,6 +16,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             SetTeamUrlDefaults::class,
         ]);
+
+        // Paddle signs its webhooks itself, and they carry no session cookie.
+        $middleware->validateCsrfTokens(except: [
+            'paddle/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

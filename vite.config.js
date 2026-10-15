@@ -15,8 +15,10 @@ export default defineConfig({
             ],
             refresh: true,
             fonts: [
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                // Inter, to match VividWriter. Downloaded at build time and served
+                // from our own domain, so no visitor IP reaches a font CDN.
+                bunny('Inter', {
+                    weights: [400, 500, 600, 700, 800],
                 }),
             ],
         }),

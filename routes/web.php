@@ -1,17 +1,43 @@
 <?php
 
+use App\Http\Controllers\DownloadInvoiceController;
 use App\Http\Controllers\ExportContactListController;
 use App\Http\Controllers\ExportDeliveryFailuresController;
+use App\Http\Controllers\ExportPersonalDataController;
 use App\Http\Controllers\OAuthController;
+use App\Http\Middleware\EnsureTeamIsSubscribed;
 use App\Http\Middleware\EnsureTeamMembership;
+use App\Http\Middleware\RequirePaddleWebhookSecret;
 use Illuminate\Support\Facades\Route;
+use Laravel\Paddle\Http\Controllers\WebhookController;
 
-Route::view('/', 'welcome')->name('home');
+Route::view('/', 'marketing.home')->name('home');
+Route::view('pricing', 'marketing.pricing')->name('pricing');
+Route::view('integrations', 'marketing.integrations')->name('marketing.integrations');
+
+Route::prefix('legal')->name('legal.')->group(function () {
+    Route::view('terms', 'legal.terms')->name('terms');
+    Route::view('privacy', 'legal.privacy')->name('privacy');
+    Route::view('refunds', 'legal.refunds')->name('refunds');
+    Route::view('cookies', 'legal.cookies')->name('cookies');
+    Route::view('data-processing', 'legal.data-processing')->name('dpa');
+    Route::view('accessibility', 'legal.accessibility')->name('accessibility');
+});
+
+Route::post('paddle/webhook', WebhookController::class)
+    ->middleware(RequirePaddleWebhookSecret::class)
+    ->name('cashier.webhook');
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::livewire('billing', 'pages::billing.show')->name('billing.show');
+    Route::get('billing/invoices/{transaction}', DownloadInvoiceController::class)->name('billing.invoice');
+    Route::get('settings/privacy/export', ExportPersonalDataController::class)->name('privacy.export');
+});
 
 Route::prefix('{current_team}')
-    ->middleware(['auth', 'verified', EnsureTeamMembership::class])
+    ->middleware(['auth', 'verified', EnsureTeamMembership::class, EnsureTeamIsSubscribed::class])
     ->group(function () {
-        Route::view('dashboard', 'dashboard')->name('dashboard');
+        Route::livewire('dashboard', 'pages::dashboard')->name('dashboard');
 
         Route::livewire('integrations', 'pages::integrations.index')->name('integrations.index');
         Route::get('integrations/oauth/{provider}/redirect', [OAuthController::class, 'redirect'])->name('integrations.oauth.redirect');

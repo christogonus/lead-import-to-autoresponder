@@ -6,8 +6,10 @@ use App\Concerns\GeneratesUniqueTeamSlugs;
 use App\Enums\TeamRole;
 use Database\Factories\TeamFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -16,7 +18,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Team extends Model
 {
     /** @use HasFactory<TeamFactory> */
-    use GeneratesUniqueTeamSlugs, HasFactory, SoftDeletes;
+    use GeneratesUniqueTeamSlugs, HasFactory, Prunable, SoftDeletes;
+
+    /**
+     * How long a deleted team is kept, so an accidental delete can be undone by
+     * support, before it and every contact it holds are erased for good.
+     */
+    public const RETENTION_DAYS_AFTER_DELETION = 30;
 
     /**
      * Bootstrap the model and its traits.
@@ -130,6 +138,31 @@ class Team extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(Delivery::class);
+    }
+
+    /**
+     * Determine whether the team can be used. Billing follows the owner: one
+     * subscription covers every team they own and everyone invited to them.
+     */
+    public function hasActiveSubscription(): bool
+    {
+        /** @var User|null $owner */
+        $owner = $this->owner();
+
+        return $owner?->hasActiveSubscription() ?? false;
+    }
+
+    /**
+     * Get the deleted teams whose retention window has passed. Pruning force
+     * deletes them, and the foreign keys cascade to lists, contacts,
+     * integrations and deliveries.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        return static::onlyTrashed()
+            ->where('deleted_at', '<=', now()->subDays(self::RETENTION_DAYS_AFTER_DELETION));
     }
 
     /**

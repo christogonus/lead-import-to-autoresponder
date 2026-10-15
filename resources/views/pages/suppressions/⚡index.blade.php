@@ -175,7 +175,7 @@ new #[Title('Do not contact')] class extends Component
 
 <div class="flex h-full w-full flex-1 flex-col gap-6">
     <div>
-        <flux:heading size="xl">{{ __('Do not contact') }}</flux:heading>
+        <flux:heading size="xl" level="1">{{ __('Do not contact') }}</flux:heading>
         <flux:subheading>
             {{ __('Addresses that bounced or asked to be removed. Blocking one deletes it from every list on this team and keeps it out of future imports and sends.') }}
         </flux:subheading>
@@ -232,7 +232,7 @@ new #[Title('Do not contact')] class extends Component
                 <flux:table.column>{{ __('Reason') }}</flux:table.column>
                 <flux:table.column>{{ __('Removed') }}</flux:table.column>
                 <flux:table.column>{{ __('Blocked') }}</flux:table.column>
-                <flux:table.column />
+                <flux:table.column><span class="sr-only">{{ __('Actions') }}</span></flux:table.column>
             </flux:table.columns>
 
             <flux:table.rows>

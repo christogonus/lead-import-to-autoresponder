@@ -1,6 +1,6 @@
 <x-layouts::auth :title="__('Register')">
     <div class="flex flex-col gap-6">
-        <x-auth-header :title="__('Create an account')" :description="__('Enter your details below to create your account')" />
+        <x-auth-header :title="__('Create your account')" :description="__('Set up your login, then pick a plan. It takes about a minute.')" />
 
         <!-- Session Status -->
         <x-auth-session-status class="text-center" :status="session('status')" />
@@ -59,6 +59,13 @@
                     {{ __('Create account') }}
                 </flux:button>
             </div>
+
+            <p class="text-center text-sm text-zinc-600 dark:text-zinc-400">
+                {{ __('By creating an account you agree to our') }}
+                <flux:link :href="route('legal.terms')">{{ __('Terms of Service') }}</flux:link>
+                {{ __('and confirm you have read our') }}
+                <flux:link :href="route('legal.privacy')">{{ __('Privacy Policy') }}</flux:link>.
+            </p>
         </form>
 
         <div class="space-x-1 rtl:space-x-reverse text-center text-sm text-zinc-600 dark:text-zinc-400">

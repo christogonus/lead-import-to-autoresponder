@@ -822,7 +822,7 @@ new #[Title('List')] class extends Component
     <div class="flex items-center justify-between">
         <div>
             <div class="flex items-center gap-2">
-                <flux:heading size="xl">{{ $contactList->name }}</flux:heading>
+                <flux:heading size="xl" level="1">{{ $contactList->name }}</flux:heading>
                 @if ($contactList->isDraft())
                     <flux:badge size="sm" color="amber" data-test="draft-badge">{{ __('Draft') }}</flux:badge>
                 @endif
@@ -1003,7 +1003,7 @@ new #[Title('List')] class extends Component
                 <flux:table.column>{{ __('Email') }}</flux:table.column>
                 <flux:table.column>{{ __('Phone') }}</flux:table.column>
                 <flux:table.column>{{ __('Country') }}</flux:table.column>
-                <flux:table.column />
+                <flux:table.column><span class="sr-only">{{ __('Actions') }}</span></flux:table.column>
             </flux:table.columns>
 
             <flux:table.rows>

@@ -1,8 +1,12 @@
 <?php
 
+use App\Actions\Users\DeleteUser;
 use App\Concerns\PasswordValidationRules;
 use App\Livewire\Actions\Logout;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Laravel\Paddle\Exceptions\PaddleException;
 use Livewire\Component;
 
 new class extends Component {
@@ -13,13 +17,30 @@ new class extends Component {
     /**
      * Delete the currently authenticated user.
      */
-    public function deleteUser(Logout $logout): void
+    public function deleteUser(Logout $logout, DeleteUser $deleter): void
     {
         $this->validate([
             'password' => $this->currentPasswordRules(),
         ]);
 
-        tap(Auth::user(), $logout(...))->delete();
+        $user = Auth::user();
+
+        // Billing is stopped while the user is still signed in, so a Paddle
+        // failure leaves them where they were with nothing lost.
+        try {
+            $deleter->stopBilling($user);
+        } catch (PaddleException|ConnectionException $exception) {
+            Log::warning('Account deletion stopped: Paddle subscription could not be cancelled.', ['message' => $exception->getMessage()]);
+            $this->addError('password', __('We could not cancel your subscription with Paddle, so nothing has been deleted yet. Please try again in a moment.'));
+
+            return;
+        }
+
+        // Signing out writes the remember token back to the user row, so it
+        // has to happen before the row is gone.
+        $logout();
+
+        $deleter->handle($user);
 
         $this->redirect('/', navigate: true);
     }
@@ -31,7 +52,11 @@ new class extends Component {
             <flux:heading size="lg">{{ __('Are you sure you want to delete your account?') }}</flux:heading>
 
             <flux:subheading>
-                {{ __('Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.') }}
+                {{ __('This cancels your subscription straight away and permanently erases your account, every team you own, and all of their lists, contacts and integrations. Members you invited lose access to those teams. It cannot be undone.') }}
+            </flux:subheading>
+
+            <flux:subheading class="mt-2">
+                {{ __('Want a copy first? Download your data from the Privacy section before you continue. Enter your password to confirm.') }}
             </flux:subheading>
         </div>
 

@@ -8,36 +8,85 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+|------------------------------------------------------------------------------
+| Design tokens
+|------------------------------------------------------------------------------
+|
+| The palette is shared with VividWriter: one royal blue (#065CFE) carried by
+| cool "ink" neutrals. Flux draws its greys from the zinc ramp, so zinc is
+| pointed at the ink ramp and the whole customer area picks up the same cool
+| tone without touching a single component.
+|
+| Every text/background pair used in the views has been checked against WCAG
+| 2.1 AA (4.5:1 for body copy). ink-500 is a touch darker than VividWriter's
+| so muted copy still passes on the grey page surface.
+|
+*/
+
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
 
-    --color-zinc-50: #fafafa;
-    --color-zinc-100: #f5f5f5;
-    --color-zinc-200: #e5e5e5;
-    --color-zinc-300: #d4d4d4;
-    --color-zinc-400: #a3a3a3;
-    --color-zinc-500: #737373;
-    --color-zinc-600: #525252;
-    --color-zinc-700: #404040;
-    --color-zinc-800: #262626;
-    --color-zinc-900: #171717;
-    --color-zinc-950: #0a0a0a;
+    --color-brand-50: #eff4ff;
+    --color-brand-100: #dfe9ff;
+    --color-brand-200: #bcd2ff;
+    --color-brand-300: #8fb4ff;
+    --color-brand-400: #5290ff;
+    --color-brand-500: #2472ff;
+    --color-brand-600: #065cfe;
+    --color-brand-700: #0d49cf;
+    --color-brand-800: #123ba6;
+    --color-brand-900: #18337f;
+    --color-brand-950: #13214d;
 
-    --color-accent: var(--color-neutral-800);
-    --color-accent-content: var(--color-neutral-800);
+    --color-ink-50: #f7f8fa;
+    --color-ink-100: #eef0f4;
+    --color-ink-200: #dfe3ea;
+    --color-ink-300: #c6ccd8;
+    --color-ink-400: #98a1b3;
+    --color-ink-500: #646c80;
+    --color-ink-600: #4d5567;
+    --color-ink-700: #3a4152;
+    --color-ink-800: #262c3a;
+    --color-ink-900: #171b26;
+    --color-ink-950: #0d1017;
+
+    --color-zinc-50: var(--color-ink-50);
+    --color-zinc-100: var(--color-ink-100);
+    --color-zinc-200: var(--color-ink-200);
+    --color-zinc-300: var(--color-ink-300);
+    --color-zinc-400: var(--color-ink-400);
+    --color-zinc-500: var(--color-ink-500);
+    --color-zinc-600: var(--color-ink-600);
+    --color-zinc-700: var(--color-ink-700);
+    --color-zinc-800: var(--color-ink-800);
+    --color-zinc-900: var(--color-ink-900);
+    --color-zinc-950: var(--color-ink-950);
+
+    /* Flux paints danger buttons red-500, where white text reaches only
+       3.8:1. Red-600 keeps the same meaning at 4.8:1. */
+    --color-red-500: oklch(57.7% 0.245 27.325);
+
+    --color-accent: var(--color-brand-600);
+    --color-accent-content: var(--color-brand-700);
     --color-accent-foreground: var(--color-white);
+
+    --shadow-card: 0 1px 2px 0 rgb(13 16 23 / 0.04), 0 1px 3px 0 rgb(13 16 23 / 0.06);
+    --shadow-raised: 0 4px 6px -1px rgb(13 16 23 / 0.07), 0 2px 4px -2px rgb(13 16 23 / 0.05);
+    --shadow-overlay: 0 10px 15px -3px rgb(13 16 23 / 0.1), 0 4px 6px -4px rgb(13 16 23 / 0.08);
 }
 
 @layer theme {
+    /* The button fill stays on brand-600 in the dark, because white text on
+       anything lighter falls below 4.5:1. Only the link colour lifts. */
     .dark {
-        --color-accent: var(--color-white);
-        --color-accent-content: var(--color-white);
-        --color-accent-foreground: var(--color-neutral-800);
+        --color-accent: var(--color-brand-600);
+        --color-accent-content: var(--color-brand-300);
+        --color-accent-foreground: var(--color-white);
     }
 }
 
 @layer base {
-
     *,
     ::after,
     ::before,
@@ -45,6 +94,43 @@
     ::file-selector-button {
         border-color: var(--color-gray-200, currentColor);
     }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    }
+
+    table,
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* A visible, high-contrast focus ring on everything that takes focus, so
+       keyboard users always know where they are (WCAG 2.4.7). */
+    :focus-visible {
+        outline: 2px solid var(--color-brand-600);
+        outline-offset: 2px;
+    }
+
+    .dark :focus-visible {
+        outline-color: var(--color-brand-300);
+    }
+
+    ::selection {
+        background-color: var(--color-brand-100);
+        color: var(--color-brand-900);
+    }
+}
+
+/* Flux sets sidebar group headings in zinc-400, which is too faint on the
+   light sidebar. Darken them in light mode only. */
+html:not(.dark) [data-flux-sidebar-group] > div > .text-zinc-400 {
+    color: var(--color-ink-500);
 }
 
 [data-flux-field]:not(ui-radio, ui-checkbox) {
@@ -61,6 +147,95 @@ select:focus[data-flux-control] {
     @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
 }
 
-/* \[:where(&)\]:size-4 {
-    @apply size-4;
-} */
+/* Long-form copy on the legal pages. There is no typography plugin, so the
+   handful of elements those documents use are styled once here. */
+@utility legal-prose {
+    color: var(--color-ink-700);
+    font-size: 1.0625rem;
+    line-height: 1.75;
+
+    & > * + * {
+        margin-top: 1rem;
+    }
+
+    & h3 {
+        margin-top: 2rem;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--color-ink-900);
+    }
+
+    & strong {
+        font-weight: 600;
+        color: var(--color-ink-900);
+    }
+
+    & a {
+        color: var(--color-brand-700);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    & a:hover {
+        color: var(--color-brand-800);
+    }
+
+    & ul,
+    & ol {
+        padding-left: 1.5rem;
+    }
+
+    & ul {
+        list-style: disc;
+    }
+
+    & ol {
+        list-style: decimal;
+    }
+
+    & li + li {
+        margin-top: 0.5rem;
+    }
+
+    & li::marker {
+        color: var(--color-ink-400);
+    }
+
+    & table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9375rem;
+    }
+
+    & caption {
+        text-align: left;
+        font-weight: 600;
+        color: var(--color-ink-900);
+        padding-bottom: 0.5rem;
+    }
+
+    & th,
+    & td {
+        border-bottom: 1px solid var(--color-ink-200);
+        padding: 0.625rem 0.75rem 0.625rem 0;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    & th {
+        color: var(--color-ink-900);
+        font-weight: 600;
+    }
+}
+
+/* Honour the operating system's "reduce motion" setting (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

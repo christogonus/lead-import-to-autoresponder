@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Paddle\Cashier;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -33,6 +34,21 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureRateLimiting();
+        $this->configureBilling();
+    }
+
+    /**
+     * Keep a customer working while Paddle retries a failed renewal. Paddle
+     * only cancels after its dunning schedule gives up, and locking someone
+     * out of their lists over an expired card on day one is needlessly harsh.
+     */
+    protected function configureBilling(): void
+    {
+        Cashier::keepPastDueSubscriptionsActive();
+
+        // The webhook route is registered in routes/web.php instead, so it can
+        // refuse unsigned deliveries on a misconfigured server.
+        Cashier::ignoreRoutes();
     }
 
     /**

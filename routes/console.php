@@ -11,3 +11,9 @@ Artisan::command('inspire', function () {
 Schedule::command('deliveries:drip')
     ->everyMinute()
     ->withoutOverlapping();
+
+// Erases deleted teams, and every contact they held, once their retention
+// window has passed. The privacy policy promises this, so it must run.
+Schedule::command('model:prune')
+    ->daily()
+    ->withoutOverlapping();

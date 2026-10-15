@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use Laravel\Paddle\Cashier;
 use Livewire\Livewire;
 
 test('profile page is displayed', function () {
@@ -45,6 +46,8 @@ test('email verification status is unchanged when email address is unchanged', f
 
 test('user can delete their account', function () {
     $user = User::factory()->create();
+
+    Cashier::fake(['subscriptions/*/cancel' => ['data' => ['status' => 'canceled', 'canceled_at' => now()->toIso8601String()]]]);
 
     $this->actingAs($user);
 

@@ -2,6 +2,26 @@
 
 Outstanding work and known limitations, most actionable first.
 
+## Launching as Lead2Crm (SaaS)
+
+- [ ] **Paddle.** Create one product with a $24/month price and a $204/year price.
+  Set `PADDLE_CLIENT_SIDE_TOKEN`, `PADDLE_API_KEY`, `PADDLE_PRICE_MONTHLY`,
+  `PADDLE_PRICE_YEARLY`, and `PADDLE_SANDBOX=false` on live. Add a webhook
+  destination `https://<your-domain>/paddle/webhook` (subscription.*, transaction.*,
+  customer.*) and set `PADDLE_WEBHOOK_SECRET` — **without it, live webhooks are refused
+  with a 503** so nobody can forge a subscription. Approve the domain in Paddle.
+- [ ] **Legal details.** Set `LEGAL_ENTITY`, `LEGAL_ADDRESS`, `LEGAL_GOVERNING_LAW` and
+  `SUPPORT_EMAIL`. Have the legal pages reviewed; name your hosting and email providers
+  in the privacy policy's sub-processor section if you prefer them listed publicly.
+- [ ] **Photos.** Run `php artisan marketing:fetch-photos` on each server so marketing
+  images are served from our own domain (the privacy policy says no third-party
+  requests before sign-in). Until then they load from the Pexels CDN.
+- [ ] **Logs.** Keep `LOG_STACK=daily` and `LOG_DAILY_DAYS=30`: logs can contain lead
+  email addresses and the privacy policy promises 30-day retention.
+- [ ] **Scheduler** must run (`model:prune` erases deleted teams after 30 days).
+- [ ] **Accessibility.** The statement describes ANDI, keyboard and screen-reader checks;
+  keep doing them as features ship. All pages currently pass axe-core WCAG 2.2 AA.
+
 ## Deferred (agreed to leave for now)
 
 - [ ] **Streaming import for large files.** The CSV import currently builds the full

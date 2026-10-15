@@ -32,5 +32,11 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="PADDLE_SANDBOX" value="true"/>
+        <env name="PADDLE_CLIENT_SIDE_TOKEN" value="test_client_token"/>
+        <env name="PADDLE_API_KEY" value="test_api_key"/>
+        <env name="PADDLE_WEBHOOK_SECRET" value=""/>
+        <env name="PADDLE_PRICE_MONTHLY" value="pri_monthly_test"/>
+        <env name="PADDLE_PRICE_YEARLY" value="pri_yearly_test"/>
     </php>
 </phpunit>

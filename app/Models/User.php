@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Concerns\HasTeams;
+use App\Enums\BillingPlan;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,13 +15,15 @@ use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Paddle\Billable;
+use Laravel\Paddle\Subscription;
 
 #[Fillable(['name', 'email', 'password', 'current_team_id'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasTeams, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use Billable, HasFactory, HasTeams, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -46,5 +49,29 @@ class User extends Authenticatable implements PasskeyUser
             ->take(2)
             ->map(fn ($word) => Str::substr($word, 0, 1))
             ->implode('');
+    }
+
+    /**
+     * Determine whether the user is paying for Lead2Crm right now. A
+     * subscription that is cancelled but not yet expired still counts.
+     */
+    public function hasActiveSubscription(): bool
+    {
+        return $this->subscribed();
+    }
+
+    /**
+     * Get the billing cycle the user's subscription is on, if any.
+     */
+    public function currentPlan(): ?BillingPlan
+    {
+        /** @var Subscription|null $subscription */
+        $subscription = $this->subscription();
+
+        if (! $subscription?->valid()) {
+            return null;
+        }
+
+        return BillingPlan::fromPriceId($subscription->items()->value('price_id'));
     }
 }

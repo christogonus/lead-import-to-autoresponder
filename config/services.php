@@ -53,4 +53,17 @@ return [
         'region' => env('ZOHO_CAMPAIGNS_REGION', 'com'),
     ],
 
+    /*
+    | The two Paddle prices behind the single Lead2Crm plan. Create one product
+    | in Paddle with a $24/month price and a $204/year price, then paste their
+    | pri_… IDs here. The amounts the site advertises live in
+    | App\Enums\BillingPlan, so keep the two in step.
+    */
+    'paddle' => [
+        'prices' => [
+            'monthly' => env('PADDLE_PRICE_MONTHLY'),
+            'yearly' => env('PADDLE_PRICE_YEARLY'),
+        ],
+    ],
+
 ];

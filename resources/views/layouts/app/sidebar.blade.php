@@ -4,16 +4,22 @@
         @include('partials.head')
     </head>
     <body class="min-h-screen bg-white dark:bg-zinc-800">
+        <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-white">
+            {{ __('Skip to main content') }}
+        </a>
+
         <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:sidebar.header>
-                <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
+                <nav aria-label="{{ __('Home') }}">
+                    <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
+                </nav>
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
             <livewire:team-switcher />
 
-            <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')" class="grid">
+            <flux:sidebar.nav aria-label="{{ __('Workspace') }}">
+                <flux:sidebar.group :heading="__('Workspace')" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
@@ -38,13 +44,13 @@
 
             <flux:spacer />
 
-            <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
+            <flux:sidebar.nav aria-label="{{ __('Account') }}">
+                <flux:sidebar.item icon="credit-card" :href="route('billing.show')" :current="request()->routeIs('billing.*')">
+                    {{ __('Billing') }}
                 </flux:sidebar.item>
 
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
+                <flux:sidebar.item icon="lifebuoy" :href="'mailto:'.config('legal.support_email')">
+                    {{ __('Get help') }}
                 </flux:sidebar.item>
             </flux:sidebar.nav>
 

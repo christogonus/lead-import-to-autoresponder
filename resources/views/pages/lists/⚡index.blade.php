@@ -293,7 +293,7 @@ new #[Title('Lists')] class extends Component {
 <div class="flex h-full w-full flex-1 flex-col gap-6">
     <div class="flex items-center justify-between">
         <div>
-            <flux:heading size="xl">{{ __('Lists') }}</flux:heading>
+            <flux:heading size="xl" level="1">{{ __('Lists') }}</flux:heading>
             <flux:subheading>{{ __('Group your contacts, then send a list to any connected destination.') }}</flux:subheading>
         </div>
 

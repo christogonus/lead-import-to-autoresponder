@@ -149,7 +149,7 @@ new #[Title('Integrations')] class extends Component {
 <div class="flex h-full w-full flex-1 flex-col gap-6">
     <div class="flex items-center justify-between">
         <div>
-            <flux:heading size="xl">{{ __('Integrations') }}</flux:heading>
+            <flux:heading size="xl" level="1">{{ __('Integrations') }}</flux:heading>
             <flux:subheading>{{ __('Connect the autoresponders and CRMs you import contacts into.') }}</flux:subheading>
         </div>
 
