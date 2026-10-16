@@ -46,6 +46,12 @@ class GoToWebinarProvider implements AutoresponderProvider
     private const WEBINARS_PAGE_SIZE = 200;
 
     /**
+     * The error code GoTo answers with when registering through the API is not
+     * permitted for the account or webinar. It rejects every registrant alike.
+     */
+    private const REGISTRATION_ACCESS_DENIED = 'RegistrationApiAccessDenied';
+
+    /**
      * @param  array{access_token?: string, organizer_key?: string}  $credentials
      */
     public function __construct(
@@ -129,6 +135,13 @@ class GoToWebinarProvider implements AutoresponderProvider
         // returns the existing registrant, so treat it as a success.
         if ($response->status() === 409) {
             return ContactSyncResult::success($this->registrantId($response));
+        }
+
+        if ($response->status() === 403 && $response->json('errorCode') === self::REGISTRATION_ACCESS_DENIED) {
+            return ContactSyncResult::destinationBlocked(
+                'GoToWebinar is not allowing registrations through the API for this webinar. Check the webinar\'s registration settings, that the connected GoTo user is its organizer, and that the GoTo plan includes API registration.',
+                $response,
+            );
         }
 
         return ContactSyncResult::failure($this->errorMessage($response), $response);

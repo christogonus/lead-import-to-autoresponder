@@ -199,3 +199,28 @@ test('pushContact fails cleanly without an organizer key', function () {
 
     Http::assertNothingSent();
 });
+
+test('pushContact flags a registration API access denial as blocking the whole destination', function () {
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars/555/registrants' => Http::response([
+        'errorCode' => 'RegistrationApiAccessDenied',
+        'description' => 'Forbidden',
+        'incident' => '1974878373419717725',
+    ], 403)]);
+
+    $result = goToWebinar()->pushContact('555', new ContactPayload(email: 'jane@example.com'));
+
+    expect($result->successful)->toBeFalse()
+        ->and($result->blocksDestination)->toBeTrue()
+        ->and($result->error)->toContain('not allowing registrations through the API')
+        ->and($result->context['status'])->toBe(403);
+});
+
+test('pushContact does not treat an ordinary rejection as blocking the destination', function () {
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/999/webinars/555/registrants' => Http::response([
+        'description' => 'The field firstName is required.',
+    ], 400)]);
+
+    $result = goToWebinar()->pushContact('555', new ContactPayload(email: 'jane@example.com'));
+
+    expect($result->blocksDestination)->toBeFalse();
+});

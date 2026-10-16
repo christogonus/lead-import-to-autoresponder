@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ContactStatus;
+use App\Enums\IntegrationProvider;
 use App\Jobs\PushDeliveryContact;
 use App\Models\Contact;
 use App\Models\ContactList;
@@ -83,4 +84,37 @@ test('a rejected delivery contact is marked failed with the error and counted', 
     $delivery = $deliveryContact->delivery->fresh();
     expect($delivery->failed_count)->toBe(1)
         ->and($delivery->status)->toBe(Delivery::STATUS_COMPLETED);
+});
+
+test('a push the destination refuses outright stops the delivery instead of failing every contact', function () {
+    Http::fake(['api.getgo.com/G2W/rest/v2/organizers/*/webinars/*/registrants' => Http::response([
+        'errorCode' => 'RegistrationApiAccessDenied',
+        'description' => 'Forbidden',
+    ], 403)]);
+
+    $deliveryContact = pendingDeliveryContact();
+    $delivery = $deliveryContact->delivery;
+    $delivery->integration->update([
+        'provider' => IntegrationProvider::GoToWebinar,
+        'credentials' => ['access_token' => 'token', 'organizer_key' => '999', 'expires_at' => now()->addHour()->toIso8601String()],
+    ]);
+
+    $others = collect(range(1, 2))->map(fn () => DeliveryContact::factory()->create([
+        'delivery_id' => $delivery->id,
+        'contact_id' => Contact::factory()->create(['team_id' => $delivery->team_id])->id,
+        'status' => ContactStatus::Pending,
+    ]));
+
+    PushDeliveryContact::dispatchSync($deliveryContact);
+
+    expect($deliveryContact->fresh()->status)->toBe(ContactStatus::Failed)
+        ->and($deliveryContact->fresh()->sync_error)->toContain('not allowing registrations through the API')
+        ->and($delivery->fresh()->status)->toBe(Delivery::STATUS_CANCELLED);
+
+    $others->each(fn (DeliveryContact $other) => expect($other->fresh()->status)->toBe(ContactStatus::Cancelled));
+
+    // The stood-down contacts never reach GoTo, even if their jobs still run.
+    PushDeliveryContact::dispatchSync($others->first());
+
+    Http::assertSentCount(1);
 });

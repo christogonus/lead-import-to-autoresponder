@@ -183,3 +183,33 @@ test('the manager does not query the identity endpoint when the organizer key is
 
     Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.getgo.com'));
 });
+
+test('the manager reuses a token another worker already refreshed instead of refreshing again', function () {
+    Http::fake();
+
+    $integration = Integration::factory()->create([
+        'provider' => IntegrationProvider::GoToWebinar,
+        'credentials' => [
+            'access_token' => 'stale-access',
+            'refresh_token' => 'stale-refresh',
+            'expires_at' => now()->subMinute()->toIso8601String(),
+            'organizer_key' => 'org-42',
+        ],
+    ]);
+
+    // Another worker refreshes and stores a new token after this job loaded
+    // the integration, so the in-memory copy still holds the expired one.
+    Integration::query()->whereKey($integration->id)->update(['credentials' => encrypt(json_encode([
+        'access_token' => 'fresh-access',
+        'refresh_token' => 'fresh-refresh',
+        'expires_at' => now()->addHour()->toIso8601String(),
+        'organizer_key' => 'org-42',
+    ]), false)]);
+
+    app(IntegrationManager::class)->driver($integration);
+
+    expect($integration->credentials['access_token'])->toBe('fresh-access');
+
+    // Refreshing again would mint a token that revokes the one just stored.
+    Http::assertNothingSent();
+});

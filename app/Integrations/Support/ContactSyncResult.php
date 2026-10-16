@@ -18,12 +18,14 @@ class ContactSyncResult
 
     /**
      * @param  array<string, mixed>  $context  Diagnostic detail about a failure, for the log.
+     * @param  bool  $blocksDestination  Whether the destination refused the push outright, so every other contact would fail the same way.
      */
     public function __construct(
         public bool $successful,
         public ?string $remoteId = null,
         public ?string $error = null,
         public array $context = [],
+        public bool $blocksDestination = false,
     ) {}
 
     public static function success(?string $remoteId = null): self
@@ -47,5 +49,18 @@ class ContactSyncResult
                 'body' => Str::limit($response->body(), self::MAX_BODY_LENGTH),
             ],
         );
+    }
+
+    /**
+     * Build a failure that is not about this contact at all: the destination is
+     * refusing every push (an account or permission block), so the rest of the
+     * delivery should be stopped rather than rejected one contact at a time.
+     */
+    public static function destinationBlocked(string $error, ?Response $response = null): self
+    {
+        $result = self::failure($error, $response);
+        $result->blocksDestination = true;
+
+        return $result;
     }
 }

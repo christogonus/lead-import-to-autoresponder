@@ -148,6 +148,18 @@ class PushDeliveryContact implements ShouldQueue
         ]);
 
         $deliveryContact->markFailed($error);
+
+        // The destination is refusing every push, not just this contact, so
+        // stand the rest of the delivery down instead of failing each in turn.
+        // Once the block is fixed, resuming the delivery picks them back up.
+        if ($result->blocksDestination) {
+            Log::error('Autoresponder delivery stopped: the destination is refusing all pushes.', [
+                ...$this->logContext($deliveryContact),
+                'error' => $error,
+            ]);
+
+            $delivery->cancel();
+        }
     }
 
     /**
